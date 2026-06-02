@@ -310,6 +310,8 @@ export function AppReleasesPage() {
     onSuccess: async (result) => {
       setMessage(`构建任务已创建：${result.job.id}`);
       setMessageTone("success");
+      setReleaseBuildId(result.job.id);
+      setReleaseChannel(result.job.channel || channel);
       setActiveTab("builds");
       await releasesQuery.refetch();
     },
@@ -2069,7 +2071,7 @@ function ReleaseRow({
 }) {
   const published = release.is_published || release.status === "released" || release.status === "rolling_out";
   return (
-    <div className="min-w-0 rounded-lg border p-3">
+    <div className="min-w-0 rounded-lg border p-3" data-testid={`release-row-${release.version_name}`}>
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
@@ -2146,7 +2148,7 @@ function ResourceRow({
   const released = resource.status === "released" || resource.status === "rolling_out";
   const paused = resource.status === "paused";
   return (
-    <div className="min-w-0 rounded-lg border p-3">
+    <div className="min-w-0 rounded-lg border p-3" data-testid={`resource-row-${resource.resource_version}`}>
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">

@@ -1,4 +1,4 @@
-import { expect, type Page, test } from "@playwright/test";
+import { expect, type Locator, type Page, test } from "@playwright/test";
 
 test.describe("admin console smoke", () => {
   test("release admin sees authorized navigation without runtime errors", async ({ page }) => {
@@ -136,7 +136,10 @@ async function submitDemoReleaseForms(page: Page) {
   const versionName = `1.0.${patch}-dev.1`;
   const versionCode = 1_000_000_000 + Number(suffix);
   const buildNumber = versionCode;
-  const resourceVersion = `${todayCompact()}.99${suffix.slice(-2)}`;
+  const resourceVersion = `${todayCompact()}.9${suffix}`;
+  const releaseTitle = `Smoke 发布 ${suffix}`;
+  const updatedReleaseTitle = `Smoke 发布已编辑 ${suffix}`;
+  const updatedResourceTitle = `Smoke 资源已编辑 ${suffix}`;
 
   await releaseTab(page, "构建记录").click();
   await page.getByPlaceholder("branch / tag / commit").fill("main");
@@ -150,12 +153,14 @@ async function submitDemoReleaseForms(page: Page) {
   await expectNoPageOverflow(page);
 
   await releaseTab(page, "App 发布").click();
-  await page.getByPlaceholder("标题").fill(`Smoke 发布 ${suffix}`);
+  await page.getByPlaceholder("标题").fill(releaseTitle);
   await page.getByPlaceholder("摘要").fill("Playwright demo release draft");
   await page.getByRole("button", { name: "创建发布草稿" }).click();
   await expect(page.getByText("发布草稿已创建")).toBeVisible();
-  await expect(page.getByText(`Smoke 发布 ${suffix}`).first()).toBeVisible();
+  const releaseRow = page.getByTestId(`release-row-${versionName}`);
+  await expect(releaseRow.getByText(releaseTitle)).toBeVisible();
   await expectNoPageOverflow(page);
+  await operateDemoRelease(page, releaseRow, updatedReleaseTitle);
 
   await releaseTab(page, "资源增量").click();
   await page.getByPlaceholder("resourceVersion").fill(resourceVersion);
@@ -166,7 +171,77 @@ async function submitDemoReleaseForms(page: Page) {
   });
   await page.getByRole("button", { name: "创建资源版本" }).click();
   await expect(page.getByText("资源版本已创建")).toBeVisible();
-  await expect(page.getByText(resourceVersion).first()).toBeVisible();
+  const resourceRow = page.getByTestId(`resource-row-${resourceVersion}`);
+  await expect(resourceRow.getByText(resourceVersion).first()).toBeVisible();
+  await expectNoPageOverflow(page);
+  await operateDemoResource(page, resourceRow, updatedResourceTitle);
+}
+
+async function operateDemoRelease(page: Page, releaseRow: Locator, updatedTitle: string) {
+  await releaseRow.getByRole("button", { name: "发布", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "发布版本" })).toBeVisible();
+  await page.getByRole("button", { name: "确认发布" }).click();
+  await expect(page.getByText("发布状态已更新")).toBeVisible();
+  await expect(releaseRow.getByText("已发布").first()).toBeVisible();
+  await expectNoPageOverflow(page);
+
+  await releaseRow.getByRole("button", { name: "灰度", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "调整 App 灰度" })).toBeVisible();
+  await page.getByLabel("自定义灰度比例").fill("50");
+  await page.getByRole("button", { name: "确认调整" }).click();
+  await expect(page.getByText("灰度比例已同步")).toBeVisible();
+  await expect(releaseRow.getByText("50%").first()).toBeVisible();
+  await expectNoPageOverflow(page);
+
+  await releaseRow.getByRole("button", { name: "编辑说明", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "编辑版本说明" })).toBeVisible();
+  await page.getByLabel("说明标题").fill(updatedTitle);
+  await page.getByLabel("说明摘要").fill("Playwright demo release notes updated");
+  await page.getByLabel("Markdown 更新内容").fill("## Smoke\n- release operation verified");
+  await page.getByRole("button", { name: "保存说明" }).click();
+  await expect(page.getByText("更新说明已保存")).toBeVisible();
+  await expect(releaseRow.getByText(updatedTitle)).toBeVisible();
+  await expectNoPageOverflow(page);
+
+  await releaseRow.getByRole("button", { name: "暂停", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "暂停发布" })).toBeVisible();
+  await page.getByRole("button", { name: "确认暂停" }).click();
+  await expect(page.getByText("发布已暂停")).toBeVisible();
+  await expect(releaseRow.getByText("已暂停").first()).toBeVisible();
+  await expectNoPageOverflow(page);
+}
+
+async function operateDemoResource(page: Page, resourceRow: Locator, updatedTitle: string) {
+  await resourceRow.getByRole("button", { name: "发布", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "发布资源版本" })).toBeVisible();
+  await page.getByRole("button", { name: "确认发布" }).click();
+  await expect(page.getByText("资源版本已发布")).toBeVisible();
+  await expect(resourceRow.getByText("已发布").first()).toBeVisible();
+  await expectNoPageOverflow(page);
+
+  await resourceRow.getByRole("button", { name: "灰度", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "调整资源灰度" })).toBeVisible();
+  await page.getByLabel("自定义灰度比例").fill("30");
+  await page.getByRole("button", { name: "确认调整" }).click();
+  await expect(page.getByText("资源灰度已同步")).toBeVisible();
+  await expect(resourceRow.getByText("30%").first()).toBeVisible();
+  await expectNoPageOverflow(page);
+
+  await resourceRow.getByRole("button", { name: "编辑说明", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "编辑资源说明" })).toBeVisible();
+  await page.getByLabel("说明标题").fill(updatedTitle);
+  await page.getByLabel("说明摘要").fill("Playwright demo resource notes updated");
+  await page.getByLabel("Markdown 更新内容").fill("## Smoke\n- resource operation verified");
+  await page.getByRole("button", { name: "保存说明" }).click();
+  await expect(page.getByText("资源更新说明已保存")).toBeVisible();
+  await expect(resourceRow.getByText(updatedTitle)).toBeVisible();
+  await expectNoPageOverflow(page);
+
+  await resourceRow.getByRole("button", { name: "暂停", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "暂停资源版本" })).toBeVisible();
+  await page.getByRole("button", { name: "确认暂停" }).click();
+  await expect(page.getByText("资源版本已暂停")).toBeVisible();
+  await expect(resourceRow.getByText("已暂停").first()).toBeVisible();
   await expectNoPageOverflow(page);
 }
 
