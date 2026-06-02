@@ -69,6 +69,9 @@ func main() {
 		}
 		cancel()
 		store = appreleases.NewPostgresStore(db)
+	} else {
+		logger.Info("database url not configured; using in-memory demo store")
+		store = appreleases.NewDemoStore()
 	}
 
 	service := appreleases.NewServiceWithStore(cfg, store)

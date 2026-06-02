@@ -32,6 +32,8 @@
 - 后台系统管理页面已从前端本地示例状态切换到后端 overview/create/enable/disable/show/hide 接口，操作后通过 React Query 刷新；菜单 visible 状态已驱动侧栏导航和首页模块入口。
 - 后台 Admin API 已接入服务端 RBAC permission middleware，按用户账号、角色权限和路由权限码拦截；系统 overview 会按当前账号过滤菜单和系统管理数据。
 - App 发版中心构建表单的 `apiBaseUrl` 已改为优先读取 `VITE_API_BASE_URL`，未配置时使用当前页面 origin，避免本地或生产同源部署时默认写入旧公网 IP。
+- 无数据库模式已从只读兜底升级为进程内可变 Demo store，覆盖 App、构建、发布、资源版本、设备、事件、审计和系统管理数据；本地浏览器 smoke 可用 demo 项目真实提交构建创建、发布草稿创建和资源 ZIP 上传创建。
+- App 发布页面移动端长版本号、长文件名、select 和操作按钮已补齐响应式约束，提交真实 demo 数据后仍通过页面横向溢出检查。
 - 本机 PostgreSQL 临时 schema 已完成真实 DB smoke，覆盖迁移、APK URL 登记、发布、update-check、资源上传发布、resource-check、activation_failed 自动暂停和审计。
 
 当前已落地 SHA-256、文件大小、ZIP 内容校验、Manifest Ed25519 签名和禁止执行代码增量发布。Android 客户端内置公钥验签仍需在客户端工程和真机 smoke 中确认。
@@ -41,7 +43,7 @@
 | 方向 | 当前状态 | 仍需外部确认 |
 |---|---|---|
 | 后端闭环 | App / build / release / resource / event / heartbeat / preflight / audit API 已落地 | 生产 18080 使用真实 `DATABASE_URL` 执行迁移并重启 |
-| 前端闭环 | `web/` 管理台已具备登录、首页、系统管理页面、用户/角色/权限/数据字典/菜单后端数据接入、菜单/RBAC 过滤结果驱动导航和 App 发版中心业务模块 | 生产静态资源浏览器 smoke |
+| 前端闭环 | `web/` 管理台已具备登录、首页、系统管理页面、用户/角色/权限/数据字典/菜单后端数据接入、菜单/RBAC 过滤结果驱动导航和 App 发版中心业务模块；本地 Playwright 已验证桌面/移动真实表单提交和无横向溢出 | 生产静态资源浏览器 smoke |
 | CLI / CI | `releasectl` 覆盖 APK URL/文件登记、资源打包上传、公钥导出、Manifest 验签；workflow 覆盖基础 smoke | 受保护 CI 环境配置真实 token 后跑发布链路 |
 | APK 更新 | 发布、灰度、下载、update-check、SHA-256 信息输出已闭环 | Android 真机下载安装、校验和系统安装器 smoke |
 | 资源增量 | 白名单、ZIP 校验、Manifest、下载、resource-check、自动暂停已闭环 | Android 真机下载、Ed25519 验签、解压激活、失败回滚 smoke |
@@ -71,7 +73,7 @@
 | GitHub/Gitea Webhook 记录 | `Handler.Webhook(provider)`、`SaveWebhookEvent` | 已有 |
 | GitHub/Gitea Actions 上传制品 | `/api/v1/ci/artifacts` + `releasectl artifact-upload` + `CIMiddleware` | 已验证 |
 
-当前目录已包含 `appreleases` 标准路由注册、迁移、服务端 main、Go module、Makefile、CI workflow 和独立后台 Web。后台 Web 已具备基础管理台壳，系统管理页面已接入后端数据；用户、角色、权限、数据字典、菜单已有表结构和 API，Admin API 已按 `release:*`、`system:*` 等权限码接入 RBAC 拦截。后续需要在真实 PostgreSQL 环境验收持久化读写、生产账号映射和浏览器 smoke。发版闭环已在本机 PostgreSQL 临时 schema 验证；生产 18080 仍需用真实 APK、真实资源包和 Android 客户端做真机 smoke。
+当前目录已包含 `appreleases` 标准路由注册、迁移、服务端 main、Go module、Makefile、CI workflow 和独立后台 Web。后台 Web 已具备基础管理台壳，系统管理页面已接入后端数据；用户、角色、权限、数据字典、菜单已有表结构和 API，Admin API 已按 `release:*`、`system:*` 等权限码接入 RBAC 拦截。无数据库模式会启用 `NewDemoStore()`，便于用 demo 项目验证系统管理和 App 发版中心写入流程。后续需要在真实 PostgreSQL 环境验收持久化读写、生产账号映射和浏览器 smoke。发版闭环已在本机 PostgreSQL 临时 schema 验证；生产 18080 仍需用真实 APK、真实资源包和 Android 客户端做真机 smoke。
 
 CI Token 推荐在完整服务端挂载时接入：
 
@@ -414,7 +416,7 @@ cd web && npm run smoke:browser
 
 本地 RBAC server smoke 结果：`release.admin` token 可读取发布中心和初始化后台 overview，overview 只返回首页和发布中心菜单，不返回系统管理菜单和系统管理数据；`release.admin` 写 `/admin/api/system/users` 返回 403；`system.admin` 写 `/admin/api/system/users` 返回 200。
 
-本地浏览器 smoke 结果：已安装 Playwright Chromium，`npm run smoke:browser` 通过 4 个用例，覆盖桌面和移动视口、`release.admin` / `system.admin` 登录、RBAC 菜单裁剪、系统管理页、App 发版中心概览 / 构建记录 / App 发布 / 资源增量 / 设备版本 / 升级统计 / 升级事件 / 操作审计、控制台错误、页面错误、Admin/API 5xx 监听和页面横向溢出检查。生产环境仍需对真实域名、真实 PostgreSQL 和生产 token 映射复跑。
+本地浏览器 smoke 结果：已安装 Playwright Chromium，`npm run smoke:browser` 通过 4 个用例，覆盖桌面和移动视口、`release.admin` / `system.admin` 登录、RBAC 菜单裁剪、系统管理页、App 发版中心概览 / 构建记录 / App 发布 / 资源增量 / 设备版本 / 升级统计 / 升级事件 / 操作审计、构建创建、发布草稿创建、合法资源 ZIP 上传创建、控制台错误、页面错误、Admin/API 5xx 监听和页面横向溢出检查。生产环境仍需对真实域名、真实 PostgreSQL 和生产 token 映射复跑。
 
 结果：当前 `/root/release-center` Go module 验证通过：
 
@@ -426,6 +428,7 @@ internal/modules/appreleases            测试通过
   - 包含 RoutesWithOptions 对 CI endpoint 的 token 保护 smoke
   - 包含 RoutesWithOptions 对 Admin API 的 RBAC 拦截，覆盖 release.admin 可读发布、不可写系统管理、system.admin 可写系统管理
   - 包含 system overview 按账号过滤菜单和系统管理数据，覆盖 release.admin 不展示系统管理菜单
+  - 包含无数据库 Demo store 写入闭环，覆盖构建创建、发布草稿创建、资源版本创建和 RBAC 拦截
   - 包含安装/资源生命周期事件状态映射
   - 包含 heartbeat snake_case 字段兼容和 deviceId 必填校验
   - 包含 task-preflight 当前版本放行、低于最低支持版本阻断
@@ -436,7 +439,7 @@ cmd/server                              编译通过
 cmd/releasectl                          编译通过
 cmd/migrate                             编译通过
 web                                    `npm run build` 通过，dist 由 Go server 托管
-web browser smoke                      `npm run smoke:browser` 通过，Chromium desktop/mobile 共 4 个用例
+web browser smoke                      `npm run smoke:browser` 通过，Chromium desktop/mobile 共 4 个用例，含 demo 构建/发布/资源表单提交
 server smoke                            /readyz 204，/ 200，/admin/api/app-releases 200，update-check 200
 real DB smoke                           migration、artifact-upload、publish、update-check、resource-upload、resource-check、activation_failed auto_pause 通过
 scripts/smoke_release_center_db.sh       已固化真实 DB smoke，`make smoke-db` 通过
@@ -445,7 +448,7 @@ Makefile targets                        test / build / resource-catalog 通过
 GitHub Actions workflow                 release-center-ci 已补齐 test/build/resource-catalog smoke
 ```
 
-当前 `/root/release-center` 目录已补齐 `go.mod` / `go.sum`、`Makefile`、GitHub Actions workflow、最小 `cmd/server`、`cmd/migrate`、基础 migration 和后台 Web，可以直接运行 `make build`，也可以启动无数据库模式或带 PostgreSQL 模式做本地 smoke。生产级 Android 安装/资源激活仍需要在真实 18080 和客户端工程上确认。
+当前 `/root/release-center` 目录已补齐 `go.mod` / `go.sum`、`Makefile`、GitHub Actions workflow、最小 `cmd/server`、`cmd/migrate`、基础 migration、进程内 Demo store 和后台 Web，可以直接运行 `make build`，也可以启动无数据库模式或带 PostgreSQL 模式做本地 smoke。生产级 Android 安装/资源激活仍需要在真实 18080 和客户端工程上确认。
 
 注意：`cmd/migrate` 当前只执行 up migrations，不做 down 回滚；生产回滚仍建议走数据库备份和发布回滚流程。
 

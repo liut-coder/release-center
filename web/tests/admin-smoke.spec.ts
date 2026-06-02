@@ -16,6 +16,7 @@ test.describe("admin console smoke", () => {
     await expectAppReleaseShell(page);
     await expect(page.getByText("正式版本")).toBeVisible();
     await verifyAppReleaseTabs(page);
+    await submitDemoReleaseForms(page);
 
     expect(errors(), "browser runtime errors").toEqual([]);
   });
@@ -97,6 +98,46 @@ async function verifyAppReleaseTabs(page: Page) {
   await expectNoPageOverflow(page);
 }
 
+async function submitDemoReleaseForms(page: Page) {
+  const suffix = Date.now().toString().slice(-6);
+  const patch = Number(suffix.slice(-2)) || 2;
+  const versionName = `1.0.${patch}-dev.1`;
+  const versionCode = 1_000_000_000 + Number(suffix);
+  const buildNumber = versionCode;
+  const resourceVersion = `${todayCompact()}.99${suffix.slice(-2)}`;
+
+  await releaseTab(page, "构建记录").click();
+  await page.getByPlaceholder("branch / tag / commit").fill("main");
+  await page.getByPlaceholder("versionName").fill(versionName);
+  await page.getByPlaceholder("versionCode").fill(String(versionCode));
+  await page.getByPlaceholder("buildNumber").fill(String(buildNumber));
+  await page.getByPlaceholder("构建备注").fill("Playwright demo smoke build");
+  await page.getByRole("button", { name: "创建构建任务" }).click();
+  await expect(page.getByText("构建任务已创建")).toBeVisible();
+  await expect(page.getByText(versionName).first()).toBeVisible();
+  await expectNoPageOverflow(page);
+
+  await releaseTab(page, "App 发布").click();
+  await page.getByPlaceholder("标题").fill(`Smoke 发布 ${suffix}`);
+  await page.getByPlaceholder("摘要").fill("Playwright demo release draft");
+  await page.getByRole("button", { name: "创建发布草稿" }).click();
+  await expect(page.getByText("发布草稿已创建")).toBeVisible();
+  await expect(page.getByText(`Smoke 发布 ${suffix}`).first()).toBeVisible();
+  await expectNoPageOverflow(page);
+
+  await releaseTab(page, "资源增量").click();
+  await page.getByPlaceholder("resourceVersion").fill(resourceVersion);
+  await page.getByLabel("上传资源 ZIP").setInputFiles({
+    name: `templates-common-${resourceVersion}.zip`,
+    mimeType: "application/zip",
+    buffer: buildZip([{ name: "templates/demo.txt", content: `demo ${suffix}` }]),
+  });
+  await page.getByRole("button", { name: "创建资源版本" }).click();
+  await expect(page.getByText("资源版本已创建")).toBeVisible();
+  await expect(page.getByText(resourceVersion).first()).toBeVisible();
+  await expectNoPageOverflow(page);
+}
+
 function releaseTab(page: Page, name: string) {
   return page.getByRole("button", { name, exact: true });
 }
@@ -147,4 +188,70 @@ function collectClientErrors(page: Page) {
     }
   });
   return () => errors;
+}
+
+function todayCompact() {
+  const date = new Date();
+  return `${date.getFullYear()}${String(date.getMonth() + 1).padStart(2, "0")}${String(date.getDate()).padStart(2, "0")}`;
+}
+
+function buildZip(entries: Array<{ name: string; content: string }>) {
+  const fileRecords: Buffer[] = [];
+  const centralRecords: Buffer[] = [];
+  let offset = 0;
+  for (const entry of entries) {
+    const name = Buffer.from(entry.name);
+    const content = Buffer.from(entry.content);
+    const crc = crc32(content);
+    const local = Buffer.alloc(30 + name.length);
+    local.writeUInt32LE(0x04034b50, 0);
+    local.writeUInt16LE(20, 4);
+    local.writeUInt16LE(0, 6);
+    local.writeUInt16LE(0, 8);
+    local.writeUInt16LE(0, 10);
+    local.writeUInt16LE(0, 12);
+    local.writeUInt32LE(crc, 14);
+    local.writeUInt32LE(content.length, 18);
+    local.writeUInt32LE(content.length, 22);
+    local.writeUInt16LE(name.length, 26);
+    name.copy(local, 30);
+    fileRecords.push(local, content);
+
+    const central = Buffer.alloc(46 + name.length);
+    central.writeUInt32LE(0x02014b50, 0);
+    central.writeUInt16LE(20, 4);
+    central.writeUInt16LE(20, 6);
+    central.writeUInt16LE(0, 8);
+    central.writeUInt16LE(0, 10);
+    central.writeUInt16LE(0, 12);
+    central.writeUInt16LE(0, 14);
+    central.writeUInt32LE(crc, 16);
+    central.writeUInt32LE(content.length, 20);
+    central.writeUInt32LE(content.length, 24);
+    central.writeUInt16LE(name.length, 28);
+    central.writeUInt32LE(offset, 42);
+    name.copy(central, 46);
+    centralRecords.push(central);
+    offset += local.length + content.length;
+  }
+  const centralOffset = offset;
+  const central = Buffer.concat(centralRecords);
+  const end = Buffer.alloc(22);
+  end.writeUInt32LE(0x06054b50, 0);
+  end.writeUInt16LE(entries.length, 8);
+  end.writeUInt16LE(entries.length, 10);
+  end.writeUInt32LE(central.length, 12);
+  end.writeUInt32LE(centralOffset, 16);
+  return Buffer.concat([...fileRecords, central, end]);
+}
+
+function crc32(input: Buffer) {
+  let crc = 0xffffffff;
+  for (const byte of input) {
+    crc ^= byte;
+    for (let i = 0; i < 8; i++) {
+      crc = crc & 1 ? (crc >>> 1) ^ 0xedb88320 : crc >>> 1;
+    }
+  }
+  return (crc ^ 0xffffffff) >>> 0;
 }

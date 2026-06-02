@@ -1283,7 +1283,7 @@ function AppReleasePanel({
   onEditNotes: (release: AppRelease) => void;
 }) {
   return (
-    <div className="grid gap-4 xl:grid-cols-[420px_minmax(0,1fr)]">
+    <div className="grid min-w-0 gap-4 xl:grid-cols-[420px_minmax(0,1fr)]">
       <Card>
         <div className="mb-4 flex items-center gap-2 font-medium">
           <FileText className="h-4 w-4" />
@@ -1367,7 +1367,7 @@ function AppReleasePanel({
         </div>
       </Card>
       <Card>
-        <div className="mb-4 grid gap-3 md:grid-cols-[160px_minmax(0,1fr)_auto]">
+        <div className="mb-4 grid min-w-0 gap-3 md:grid-cols-[160px_minmax(0,1fr)_auto]">
           <Select label="筛选渠道" value={channelFilter} onChange={setChannelFilter} options={channelFilters} />
           <div className="relative">
             <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
@@ -1458,7 +1458,7 @@ function ResourcePanel({
   onEditNotes: (resource: AppResourceVersion) => void;
 }) {
   return (
-    <div className="grid gap-4 xl:grid-cols-[420px_minmax(0,1fr)]">
+    <div className="grid min-w-0 gap-4 xl:grid-cols-[420px_minmax(0,1fr)]">
       <Card>
         <div className="mb-4 flex items-center gap-2 font-medium">
           <FileArchive className="h-4 w-4" />
@@ -2069,11 +2069,11 @@ function ReleaseRow({
 }) {
   const published = release.is_published || release.status === "released" || release.status === "rolling_out";
   return (
-    <div className="rounded-lg border p-3">
+    <div className="min-w-0 rounded-lg border p-3">
       <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="min-w-0">
+        <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
-            <div className="font-medium">{release.title || release.version_name}</div>
+            <div className="min-w-0 break-words font-medium">{release.title || release.version_name}</div>
             <Badge>{release.version_code}</Badge>
             <Badge>{release.channel}</Badge>
             {release.is_latest ? <Badge tone="success">latest</Badge> : null}
@@ -2084,7 +2084,7 @@ function ReleaseRow({
             {release.file_name} | {formatDateTime(release.created_at)}
           </div>
         </div>
-        <div className="flex flex-wrap gap-2">
+        <div className="flex max-w-full flex-wrap gap-2">
           <Button variant="secondary" size="sm" onClick={() => window.open(downloadUrl(release, true), "_blank")}>
             <Download className="mr-2 h-3.5 w-3.5" />
             下载
@@ -2146,11 +2146,11 @@ function ResourceRow({
   const released = resource.status === "released" || resource.status === "rolling_out";
   const paused = resource.status === "paused";
   return (
-    <div className="rounded-lg border p-3">
+    <div className="min-w-0 rounded-lg border p-3">
       <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="min-w-0">
+        <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
-            <div className="font-medium">{resource.title || resource.resource_version}</div>
+            <div className="min-w-0 break-words font-medium">{resource.title || resource.resource_version}</div>
             <Badge>{resource.resource_version}</Badge>
             <Badge>{resource.channel}</Badge>
             <Badge tone={statusTone(resource.status)}>{statusLabel(resource.status)}</Badge>
@@ -2167,7 +2167,7 @@ function ResourceRow({
             </div>
           ) : null}
         </div>
-        <div className="flex flex-wrap gap-2">
+        <div className="flex max-w-full flex-wrap gap-2">
           <Button variant="secondary" size="sm" onClick={() => window.open(resource.manifest_url, "_blank")}>
             Manifest
           </Button>
@@ -2504,7 +2504,7 @@ function Select({
   return (
     <select
       aria-label={label}
-      className="h-9 w-full rounded-lg border bg-white px-3 text-xs outline-none transition focus:border-black focus:ring-2 focus:ring-black/10"
+      className="h-9 min-w-0 w-full rounded-lg border bg-white px-3 text-xs outline-none transition focus:border-black focus:ring-2 focus:ring-black/10"
       value={value}
       onChange={(event) => onChange(event.target.value)}
     >
