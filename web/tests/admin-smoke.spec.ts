@@ -32,7 +32,9 @@ test.describe("admin console smoke", () => {
     await expect(page.getByRole("cell", { name: "system.admin" })).toBeVisible();
 
     await page.getByRole("button", { name: "新增用户" }).click();
-    await expect(page.getByRole("cell", { name: "新用户" }).first()).toBeVisible();
+    const userRow = page.getByRole("row").filter({ has: page.getByRole("cell", { name: "新用户" }) }).first();
+    await expect(userRow).toBeVisible();
+    await toggleTableRowState(page, userRow, "停用", "启用");
 
     await submitSystemManagementForms(page);
 
@@ -105,28 +107,52 @@ async function submitSystemManagementForms(page: Page) {
   await navButton(page, "角色管理").click();
   await expect(page.getByRole("heading", { name: "角色管理" })).toBeVisible();
   await page.getByRole("button", { name: "新增角色" }).click();
-  await expect(page.getByText("新角色").first()).toBeVisible();
+  const roleCard = page.getByTestId(/^system-role-row-custom_role_/).first();
+  await expect(roleCard.getByText("新角色")).toBeVisible();
+  await toggleRoleCardState(page, roleCard);
   await expectNoPageOverflow(page);
 
   await openSidebarIfMobile(page);
   await navButton(page, "权限管理").click();
   await expect(page.getByRole("heading", { name: "权限管理" })).toBeVisible();
   await page.getByRole("button", { name: "新增权限" }).click();
-  await expect(page.getByRole("cell", { name: "新权限" }).first()).toBeVisible();
+  const permissionRow = page.getByRole("row").filter({ has: page.getByRole("cell", { name: "新权限" }) }).first();
+  await expect(permissionRow).toBeVisible();
+  await toggleTableRowState(page, permissionRow, "停用", "启用");
   await expectNoPageOverflow(page);
 
   await openSidebarIfMobile(page);
   await navButton(page, "数据字典").click();
   await expect(page.getByRole("heading", { name: "数据字典" })).toBeVisible();
   await page.getByRole("button", { name: "新增字典" }).click();
-  await expect(page.getByRole("cell", { name: "新字典项" }).first()).toBeVisible();
+  const dictionaryRow = page.getByRole("row").filter({ has: page.getByRole("cell", { name: "新字典项" }) }).first();
+  await expect(dictionaryRow).toBeVisible();
+  await toggleTableRowState(page, dictionaryRow, "停用", "启用");
   await expectNoPageOverflow(page);
 
   await openSidebarIfMobile(page);
   await navButton(page, "菜单编辑").click();
   await expect(page.getByRole("heading", { name: "菜单编辑" })).toBeVisible();
   await page.getByRole("button", { name: "新增菜单" }).click();
-  await expect(page.getByRole("cell", { name: "新菜单" }).first()).toBeVisible();
+  const menuRow = page.getByRole("row").filter({ has: page.getByRole("cell", { name: "新菜单" }) }).first();
+  await expect(menuRow).toBeVisible();
+  await toggleTableRowState(page, menuRow, "隐藏", "显示");
+  await expectNoPageOverflow(page);
+}
+
+async function toggleTableRowState(page: Page, row: Locator, firstAction: string, secondAction: string) {
+  await row.getByRole("button", { name: firstAction, exact: true }).click();
+  await expect(row.getByRole("button", { name: secondAction, exact: true })).toBeVisible();
+  await row.getByRole("button", { name: secondAction, exact: true }).click();
+  await expect(row.getByRole("button", { name: firstAction, exact: true })).toBeVisible();
+  await expectNoPageOverflow(page);
+}
+
+async function toggleRoleCardState(page: Page, roleCard: Locator) {
+  await roleCard.getByRole("switch").click();
+  await expect(roleCard.getByText("停用")).toBeVisible();
+  await roleCard.getByRole("switch").click();
+  await expect(roleCard.getByText("启用")).toBeVisible();
   await expectNoPageOverflow(page);
 }
 

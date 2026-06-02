@@ -537,7 +537,7 @@ function UsersPage({ users, loading, error, actions }: { users: SystemUser[]; lo
         </thead>
         <tbody>
           {rows.map((user) => (
-            <tr key={user.id}>
+            <tr key={user.id} data-testid={`system-user-row-${user.account}`}>
               <Td>{user.name}</Td>
               <Td>{user.account}</Td>
               <Td>{user.role}</Td>
@@ -582,13 +582,16 @@ function RolesPage({ roles, loading, error, actions }: { roles: SystemRole[]; lo
       <div className="grid gap-3 xl:grid-cols-3">
         {roles.length === 0 ? <SystemEmptyState label="暂无角色" /> : null}
         {roles.map((role) => (
-          <div key={role.id} className="rounded-lg border p-3">
+          <div key={role.id} className="rounded-lg border p-3" data-testid={`system-role-row-${role.code}`}>
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0">
                 <div className="truncate font-medium">{role.name}</div>
                 <div className="mt-1 font-mono text-xs text-muted-foreground">{role.code}</div>
               </div>
-              <Switch checked={role.enabled} disabled={actions.pending} onCheckedChange={(checked) => actions.setRoleEnabled(role.id, checked)} />
+              <div className="flex shrink-0 items-center gap-2">
+                <Badge tone={role.enabled ? "success" : "warning"}>{role.enabled ? "启用" : "停用"}</Badge>
+                <Switch checked={role.enabled} disabled={actions.pending} onCheckedChange={(checked) => actions.setRoleEnabled(role.id, checked)} />
+              </div>
             </div>
             <div className="mt-3 grid gap-2 text-xs">
               <InfoRow label="用户数" value={`${role.users}`} />
@@ -629,7 +632,7 @@ function PermissionsPage({ permissions, loading, error, actions }: { permissions
         </thead>
         <tbody>
           {permissions.map((permission) => (
-            <tr key={permission.id}>
+            <tr key={permission.id} data-testid={`system-permission-row-${permission.code}`}>
               <Td>{permission.name}</Td>
               <Td>{permission.code}</Td>
               <Td>{permission.module}</Td>
@@ -704,7 +707,7 @@ function DictionariesPage({ dictionaries, loading, error, actions }: { dictionar
           </thead>
           <tbody>
             {rows.map((item) => (
-              <tr key={item.id}>
+              <tr key={item.id} data-testid={`system-dictionary-row-${item.group}-${item.key}`}>
                 <Td>{item.label}</Td>
                 <Td>{item.key}</Td>
                 <Td>{item.value}</Td>
@@ -756,7 +759,7 @@ function MenusPage({ menus, loading, error, actions }: { menus: SystemMenu[]; lo
         </thead>
         <tbody>
           {menus.map((menu) => (
-            <tr key={menu.id}>
+            <tr key={menu.id} data-testid={`system-menu-row-${menu.path}`}>
               <Td>{menu.title}</Td>
               <Td>{menu.path}</Td>
               <Td>{menu.icon}</Td>
