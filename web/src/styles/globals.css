@@ -1,0 +1,104 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: light;
+  --background: 0 0% 100%;
+  --foreground: 0 0% 4%;
+  --card: 0 0% 100%;
+  --card-foreground: 0 0% 4%;
+  --muted: 0 0% 97%;
+  --muted-foreground: 0 0% 42%;
+  --primary: 0 0% 4%;
+  --primary-foreground: 0 0% 100%;
+  --border: 0 0% 90%;
+  --input: 0 0% 88%;
+  --ring: 0 0% 4%;
+}
+
+* {
+  border-color: hsl(var(--border));
+}
+
+html {
+  background: hsl(var(--background));
+}
+
+body {
+  margin: 0;
+  background: hsl(var(--background));
+  color: hsl(var(--foreground));
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Segoe UI", sans-serif;
+  letter-spacing: 0;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+.glass {
+  background: rgba(255, 255, 255, 0.78);
+  backdrop-filter: blur(18px);
+}
+
+.admin-shell .text-3xl {
+  font-size: 1.375rem;
+  line-height: 1.75rem;
+}
+
+.admin-shell .text-2xl {
+  font-size: 1.25rem;
+  line-height: 1.75rem;
+}
+
+.admin-shell .text-lg {
+  font-size: 1rem;
+  line-height: 1.5rem;
+}
+
+.admin-shell .rounded-2xl {
+  border-radius: 0.75rem;
+}
+
+.admin-content {
+  font-size: 0.875rem;
+}
+
+.admin-shell .grid {
+  min-width: 0;
+}
+
+.admin-shell img,
+.admin-shell canvas,
+.admin-shell svg,
+.admin-shell video {
+  max-width: 100%;
+}
+
+.admin-shell pre,
+.admin-shell code {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.admin-shell table {
+  max-width: 100%;
+}
+
+.admin-shell [class*="overflow-x-auto"] {
+  -webkit-overflow-scrolling: touch;
+}
+
+@media (max-width: 640px) {
+  .admin-content {
+    font-size: 0.8125rem;
+  }
+
+  .admin-shell .rounded-xl {
+    border-radius: 0.625rem;
+  }
+}

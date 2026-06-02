@@ -1,0 +1,12 @@
+DROP TABLE IF EXISTS audit_events;
+DROP TABLE IF EXISTS webhook_events;
+DROP TABLE IF EXISTS app_resource_update_events;
+DROP TABLE IF EXISTS app_upgrade_events;
+DROP TABLE IF EXISTS app_installations;
+DROP TABLE IF EXISTS app_resource_packages;
+DROP TABLE IF EXISTS app_resource_versions;
+DROP TABLE IF EXISTS app_release_rules;
+DROP TABLE IF EXISTS app_release_notes;
+DROP TABLE IF EXISTS app_releases;
+DROP TABLE IF EXISTS app_builds;
+DROP TABLE IF EXISTS apps;
