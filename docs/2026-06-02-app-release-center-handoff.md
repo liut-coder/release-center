@@ -409,11 +409,12 @@ go test ./...
 go build -buildvcs=false ./cmd/server ./cmd/releasectl ./cmd/migrate
 cd web && npm run build
 ADDR=127.0.0.1:18083 ADMIN_TOKEN=admin-token ADMIN_TOKEN_ACCOUNTS='release-token:release.admin' WEB_DIST=web/dist go run -buildvcs=false ./cmd/server
+cd web && npm run smoke:browser
 ```
 
 本地 RBAC server smoke 结果：`release.admin` token 可读取发布中心和初始化后台 overview，overview 只返回首页和发布中心菜单，不返回系统管理菜单和系统管理数据；`release.admin` 写 `/admin/api/system/users` 返回 403；`system.admin` 写 `/admin/api/system/users` 返回 200。
 
-限制：当前环境未安装 Chromium / Playwright / Puppeteer，尚未完成浏览器自动化点击和视觉 smoke；前端结论只覆盖 TypeScript/Vite 构建与后端 API smoke。
+本地浏览器 smoke 结果：已安装 Playwright Chromium，`npm run smoke:browser` 通过 4 个用例，覆盖桌面和移动视口、`release.admin` / `system.admin` 登录、RBAC 菜单裁剪、系统管理页、App 发布页、控制台错误、页面错误、Admin/API 5xx 监听和页面横向溢出检查。生产环境仍需对真实域名、真实 PostgreSQL 和生产 token 映射复跑。
 
 结果：当前 `/root/release-center` Go module 验证通过：
 
@@ -435,6 +436,7 @@ cmd/server                              编译通过
 cmd/releasectl                          编译通过
 cmd/migrate                             编译通过
 web                                    `npm run build` 通过，dist 由 Go server 托管
+web browser smoke                      `npm run smoke:browser` 通过，Chromium desktop/mobile 共 4 个用例
 server smoke                            /readyz 204，/ 200，/admin/api/app-releases 200，update-check 200
 real DB smoke                           migration、artifact-upload、publish、update-check、resource-upload、resource-check、activation_failed auto_pause 通过
 scripts/smoke_release_center_db.sh       已固化真实 DB smoke，`make smoke-db` 通过
@@ -458,7 +460,7 @@ P0 用真实资源包和 Android 客户端跑 ZIP 下载、校验、激活、失
 P1 Android 客户端内置 Manifest 公钥并完成真机验签 smoke。
 P1 在真实 PostgreSQL 上验收系统管理用户、角色、权限、数据字典、菜单持久化读写。
 P1 在真实 PostgreSQL 和生产 token 映射下验收 RBAC：API 403、菜单裁剪、系统管理数据过滤和审计记录。
-P1 补齐前端浏览器自动化 smoke，覆盖登录、首页、系统管理、App 发版中心表单和菜单显隐。
+P1 在生产环境复跑前端浏览器 smoke，覆盖真实域名、真实 PostgreSQL、生产 token 映射和缓存刷新策略。
 P2 将质量告警接入外部通知和自动执行策略。
 ```
 

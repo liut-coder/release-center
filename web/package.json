@@ -7,7 +7,8 @@
     "dev": "vite --host 0.0.0.0",
     "typecheck": "tsc -b --noEmit",
     "build": "tsc -b && vite build",
-    "preview": "vite preview --host 0.0.0.0"
+    "preview": "vite preview --host 0.0.0.0",
+    "smoke:browser": "playwright install chromium && npm run build && playwright test"
   },
   "dependencies": {
     "@radix-ui/react-dialog": "^1.1.15",
@@ -21,6 +22,7 @@
     "tailwind-merge": "^2.5.5"
   },
   "devDependencies": {
+    "@playwright/test": "^1.60.0",
     "@types/node": "^20.17.6",
     "@types/react": "^18.3.12",
     "@types/react-dom": "^18.3.1",

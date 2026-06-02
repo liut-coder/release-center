@@ -210,7 +210,7 @@ export function App() {
         <section className="min-w-0 flex-1">
           <header className="sticky top-0 z-20 flex h-14 items-center justify-between border-b bg-white/95 px-4 backdrop-blur">
             <div className="flex min-w-0 items-center gap-3">
-              <Button variant="ghost" size="icon" className="lg:hidden" onClick={() => setSidebarOpen(true)}>
+              <Button variant="ghost" size="icon" className="lg:hidden" aria-label="打开菜单" onClick={() => setSidebarOpen(true)}>
                 <Menu className="h-4 w-4" />
               </Button>
               <div className="min-w-0">
@@ -227,6 +227,7 @@ export function App() {
               <Button
                 variant="secondary"
                 size="icon"
+                aria-label="退出登录"
                 onClick={() => {
                   saveAppTokens({ configToken: "" });
                   setSession({ signedIn: false, token: "", name: "" });

@@ -17,8 +17,8 @@
 | 资源安全 | 增量资源白名单、ZIP 内容校验、禁止执行代码、SHA-256、文件大小校验和 Manifest Ed25519 签名已落地 |
 | 自动保护 | `activation_failed` 会自动暂停匹配资源版本，写入 `paused_at` 并记录 `resource.auto_pause` 审计 |
 | 质量观察 | overview API 输出 `quality_metrics`、`quality_policy`、`quality_alerts`；Web 统计页展示成功率、失败率、失败原因、阈值、策略建议和质量告警 |
-| 本机验证 | `go test ./...`、`go build -buildvcs=false ./cmd/server ./cmd/releasectl ./cmd/migrate`、`cd web && npm run build` 已通过；系统管理 API 已在 19082 无数据库 Demo fallback 模式 smoke；真实 DB smoke 覆盖迁移、发布、资源发布、检查更新和自动暂停 |
-| 外部待验收 | 生产 18080 migration/重启、系统管理真实 PostgreSQL 环境 smoke、生产静态资源浏览器 smoke、真实 APK Android 安装升级 smoke、真实资源 Android 下载/验签/激活/回滚 smoke 仍需继续推进 |
+| 本机验证 | `go test ./...`、`go build -buildvcs=false ./cmd/server ./cmd/releasectl ./cmd/migrate`、`cd web && npm run smoke:browser` 已通过；系统管理 API 已在无数据库 Demo fallback 模式 smoke；浏览器 smoke 覆盖桌面/移动 Chromium、登录、RBAC 菜单裁剪、系统页、App 发布页、运行时错误监听和页面横向溢出检查；真实 DB smoke 覆盖迁移、发布、资源发布、检查更新和自动暂停 |
+| 外部待验收 | 生产 18080 migration/重启、系统管理真实 PostgreSQL 环境 smoke、生产环境浏览器 smoke、真实 APK Android 安装升级 smoke、真实资源 Android 下载/验签/激活/回滚 smoke 仍需继续推进 |
 
 ## 当前项目推进与优化点
 
@@ -34,7 +34,7 @@
 - 观测闭环：overview API 和 Web 统计页已展示 APK/资源成功率、失败率、失败原因、质量阈值、策略建议和质量告警。
 - 系统管理闭环：已新增用户、角色、权限、数据字典、菜单 PostgreSQL 表和 Admin API，前端系统管理页面已接入后端 overview/create/enable/disable/show/hide 接口；菜单 visible 状态和服务端 RBAC 过滤结果驱动侧栏导航和首页模块入口；无数据库时后端提供进程内可变 Demo fallback 便于本地调试。
 - 权限闭环：Admin API 已接入服务端 RBAC permission middleware，按 `release:read`、`release:write`、`release:audit`、`system:read`、`system:write` 拦截；`/admin/api/system/overview` 作为后台初始化入口按当前账号过滤菜单和系统管理数据。
-- 前端闭环：`web/` 已形成独立 Vite 管理台，具备登录、首页、系统管理页面和 App 发版中心业务模块。
+- 前端闭环：`web/` 已形成独立 Vite 管理台，具备登录、首页、系统管理页面和 App 发版中心业务模块；Playwright 浏览器 smoke 已覆盖桌面和移动视口。
 - 本地验证闭环：Go test、Go build、Web build 和真实 DB smoke 均已跑通，覆盖迁移、发布、检查更新、资源发布和自动暂停。
 
 ### 仍需验收
@@ -49,7 +49,7 @@
 | CI 真链路 | GitHub/Gitea 受保护环境配置真实 token，执行 artifact-upload 和 resource-upload | P0 |
 | 系统管理 | 生产 PostgreSQL 执行系统管理 migration 后，验证用户/角色/权限/菜单/字典真实持久化读写 | P1 |
 | 权限拦截 | 后台 Admin API 已接入用户/角色/权限点拦截；后续补 CI/Webhook 签名细化和真实生产账号验收 | P1 |
-| 静态资源 | 生产 `web/dist` 托管、缓存策略、刷新策略和浏览器 smoke | P1 |
+| 静态资源 | 本地 `web/dist` 浏览器 smoke 已通过；生产 `web/dist` 托管、缓存策略、刷新策略和生产环境浏览器 smoke 仍需复跑 | P1 |
 | 告警通知 | 质量告警接入外部通知渠道，并明确自动执行策略边界 | P2 |
 
 ### 近期优化点
@@ -132,6 +132,14 @@ go run -buildvcs=false ./cmd/server
 ```bash
 cd web && npm run build
 ```
+
+浏览器 smoke 可通过 Playwright 复跑：
+
+```bash
+cd web && npm run smoke:browser
+```
+
+该命令会先构建 `web/dist`，再启动 Go server 托管生产产物，并用 Chromium 桌面和移动视口验证登录、RBAC 菜单裁剪、系统管理页、App 发布页、控制台错误、页面错误、Admin/API 5xx 和页面横向溢出。
 
 构建产物位于 `web/dist`。`cmd/server` 默认通过 `WEB_DIST=web/dist` 托管后台页面，`GET /` 返回管理控制台；API 路径 `/api/*` 和 `/admin/api/*` 不会被 SPA fallback 抢占。
 

@@ -4,6 +4,8 @@ web/node_modules/
 bin/
 tmp/
 coverage/
+web/test-results/
+web/playwright-report/
 *.test
 *.out
 
