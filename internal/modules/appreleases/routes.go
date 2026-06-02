@@ -106,6 +106,7 @@ func (h *Handler) RoutesWithOptions(opts RouteOptions) chi.Router {
 		r.Get("/api/v1/app/resources/{resource_id}/manifest", h.DownloadResourceManifest)
 		r.Get("/api/v1/app/resources/packages/{package_id}/download", h.DownloadResourcePackage)
 		r.Get("/api/v1/app/builds/{build_id}/download", h.DownloadBuild)
+		r.Get("/api/v1/app/build-artifacts/{artifact_id}/download", h.DownloadBuildArtifact)
 		r.Post("/api/v1/app/heartbeat", h.Heartbeat)
 		r.Post("/api/v1/app/update-event", h.UpdateEvent)
 
@@ -115,6 +116,7 @@ func (h *Handler) RoutesWithOptions(opts RouteOptions) chi.Router {
 		r.Get("/api/v1/apps/resources/{resource_id}/manifest", h.DownloadResourceManifest)
 		r.Get("/api/v1/apps/resources/packages/{package_id}/download", h.DownloadResourcePackage)
 		r.Get("/api/v1/apps/builds/{build_id}/download", h.DownloadBuild)
+		r.Get("/api/v1/apps/build-artifacts/{artifact_id}/download", h.DownloadBuildArtifact)
 		r.Post("/api/v1/apps/heartbeat", h.Heartbeat)
 		r.Post("/api/v1/apps/update-events", h.UpdateEvent)
 	})

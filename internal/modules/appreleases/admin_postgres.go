@@ -261,6 +261,10 @@ func (s *PostgresStore) UpdateAppEnabled(ctx context.Context, id string, enabled
 
 func (s *PostgresStore) CreateBuild(ctx context.Context, build AppBuildJob, cfg Config) (AppBuildJob, error) {
 	cfg = normalizeConfig(cfg)
+	return s.createBuild(ctx, build, cfg, true)
+}
+
+func (s *PostgresStore) createBuild(ctx context.Context, build AppBuildJob, cfg Config, replacePrimaryArtifact bool) (AppBuildJob, error) {
 	tx, err := s.db.Begin(ctx)
 	if err != nil {
 		return AppBuildJob{}, err
@@ -284,6 +288,35 @@ func (s *PostgresStore) CreateBuild(ctx context.Context, build AppBuildJob, cfg 
 	if build.StorageKey != "" {
 		metadata["storage_key"] = build.StorageKey
 	}
+	conflictArtifactUpdate := `
+			artifact_type = excluded.artifact_type,
+			artifact_path = excluded.artifact_path,
+			artifact_size = excluded.artifact_size,
+			sha256 = excluded.sha256,`
+	if !replacePrimaryArtifact {
+		conflictArtifactUpdate = `
+			artifact_type = case when app_builds.artifact_path = '' then excluded.artifact_type else app_builds.artifact_type end,
+			artifact_path = case when app_builds.artifact_path = '' then excluded.artifact_path else app_builds.artifact_path end,
+			artifact_size = case when app_builds.artifact_size = 0 then excluded.artifact_size else app_builds.artifact_size end,
+			sha256 = case when app_builds.sha256 = '' then excluded.sha256 else app_builds.sha256 end,`
+	}
+	conflictMetadataUpdate := `metadata = app_builds.metadata || excluded.metadata`
+	if !replacePrimaryArtifact {
+		conflictMetadataUpdate = `metadata = app_builds.metadata
+				|| (excluded.metadata - 'storage_key' - 'file_name')
+				|| case
+					when coalesce(app_builds.metadata->>'storage_key', '') = ''
+					  and coalesce(excluded.metadata->>'storage_key', '') <> ''
+					then jsonb_build_object('storage_key', excluded.metadata->>'storage_key')
+					else '{}'::jsonb
+				end
+				|| case
+					when coalesce(app_builds.metadata->>'file_name', '') = ''
+					  and coalesce(excluded.metadata->>'file_name', '') <> ''
+					then jsonb_build_object('file_name', excluded.metadata->>'file_name')
+					else '{}'::jsonb
+				end`
+	}
 	err = tx.QueryRow(ctx, `
 		insert into app_builds (
 			id, tenant_id, app_id, version_name, version_code, build_number,
@@ -302,12 +335,9 @@ func (s *PostgresStore) CreateBuild(ctx context.Context, build AppBuildJob, cfg 
 			git_branch = excluded.git_branch,
 			build_environment = excluded.build_environment,
 			build_status = excluded.build_status,
-			artifact_type = excluded.artifact_type,
-			artifact_path = excluded.artifact_path,
-			artifact_size = excluded.artifact_size,
-			sha256 = excluded.sha256,
+`+conflictArtifactUpdate+`
 			built_by = excluded.built_by,
-			metadata = app_builds.metadata || excluded.metadata
+			`+conflictMetadataUpdate+`
 		returning id::text, created_at
 	`, build.ID, appID, build.VersionName, build.VersionCode, build.BuildNumber,
 		build.Channel, build.BuildType, build.GitCommit, build.GitBranch, build.BuildEnvironment,
@@ -318,10 +348,14 @@ func (s *PostgresStore) CreateBuild(ctx context.Context, build AppBuildJob, cfg 
 	}
 	if build.StorageKey != "" {
 		build.ArtifactPath = "/api/v1/app/builds/" + build.ID + "/download"
+		where := "id = $1 and tenant_id = 'default'"
+		if !replacePrimaryArtifact {
+			where += " and (artifact_path = '' or artifact_path = '/api/v1/app/builds/pending/download')"
+		}
 		if _, err := tx.Exec(ctx, `
 			update app_builds
 			set artifact_path = $2
-			where id = $1 and tenant_id = 'default'
+			where `+where+`
 		`, build.ID, build.ArtifactPath); err != nil {
 			return AppBuildJob{}, err
 		}
@@ -330,6 +364,68 @@ func (s *PostgresStore) CreateBuild(ctx context.Context, build AppBuildJob, cfg 
 		return AppBuildJob{}, err
 	}
 	return s.getAdminBuild(ctx, build.ID)
+}
+
+func (s *PostgresStore) CreateBuildArtifact(ctx context.Context, build AppBuildJob, artifact AppBuildArtifact, cfg Config) (AppBuildJob, AppBuildArtifact, error) {
+	cfg = normalizeConfig(cfg)
+	createdBuild, err := s.createBuild(ctx, build, cfg, false)
+	if err != nil {
+		return AppBuildJob{}, AppBuildArtifact{}, err
+	}
+	if artifact.ID == "" {
+		artifact.ID = uuid.NewString()
+	}
+	if artifact.BuildID == "" {
+		artifact.BuildID = createdBuild.ID
+	}
+	if artifact.Name == "" {
+		artifact.Name = firstNonBlank(artifact.ArtifactType, "artifact")
+	}
+	metadata := map[string]any{"source": "ci_artifact"}
+	if artifact.StorageKey != "" {
+		metadata["storage_key"] = artifact.StorageKey
+	}
+	err = s.db.QueryRow(ctx, `
+		insert into app_build_artifacts (
+			id, tenant_id, build_id, name, artifact_type, artifact_path,
+			file_name, artifact_size, sha256, metadata
+		)
+		values ($1, 'default', $2, $3, $4, $5, $6, $7, $8, $9)
+		on conflict (build_id, name) do update set
+			artifact_type = excluded.artifact_type,
+			artifact_path = excluded.artifact_path,
+			file_name = excluded.file_name,
+			artifact_size = excluded.artifact_size,
+			sha256 = excluded.sha256,
+			metadata = app_build_artifacts.metadata || excluded.metadata,
+			updated_at = now()
+		returning id::text, build_id::text, created_at
+	`, artifact.ID, createdBuild.ID, artifact.Name, artifact.ArtifactType, artifact.ArtifactPath,
+		artifact.FileName, artifact.SizeBytes, artifact.SHA256, jsonb(metadata)).Scan(&artifact.ID, &artifact.BuildID, &artifact.CreatedAt)
+	if err != nil {
+		return AppBuildJob{}, AppBuildArtifact{}, err
+	}
+	if artifact.StorageKey != "" {
+		artifact.ArtifactPath = "/api/v1/app/build-artifacts/" + artifact.ID + "/download"
+		if _, err := s.db.Exec(ctx, `
+			update app_build_artifacts
+			set artifact_path = $2
+			where id = $1 and tenant_id = 'default'
+		`, artifact.ID, artifact.ArtifactPath); err != nil {
+			return AppBuildJob{}, AppBuildArtifact{}, err
+		}
+	}
+	refreshed, err := s.getAdminBuild(ctx, createdBuild.ID)
+	if err != nil {
+		return AppBuildJob{}, AppBuildArtifact{}, err
+	}
+	for _, item := range refreshed.Artifacts {
+		if item.ID == artifact.ID {
+			artifact = item
+			break
+		}
+	}
+	return refreshed, artifact, nil
 }
 
 func (s *PostgresStore) SaveWebhookEvent(ctx context.Context, event WebhookEventRequest) (WebhookEventAdmin, error) {
@@ -630,6 +726,23 @@ func (s *PostgresStore) GetBuildStorageKey(ctx context.Context, buildID string) 
 	return storageKey, fileName, nil
 }
 
+func (s *PostgresStore) GetBuildArtifactStorageKey(ctx context.Context, artifactID string) (string, string, error) {
+	var storageKey, fileName string
+	err := s.db.QueryRow(ctx, `
+		select coalesce(metadata->>'storage_key', ''),
+		       coalesce(nullif(file_name, ''), name)
+		from app_build_artifacts
+		where id = $1 and tenant_id = 'default'
+	`, artifactID).Scan(&storageKey, &fileName)
+	if err != nil {
+		return "", "", err
+	}
+	if storageKey == "" {
+		return "", "", fmt.Errorf("build artifact storage_key is empty")
+	}
+	return storageKey, fileName, nil
+}
+
 func (s *PostgresStore) GetReleaseStorageKey(ctx context.Context, releaseID string) (string, string, error) {
 	var storageKey, fileName string
 	err := s.db.QueryRow(ctx, `
@@ -832,7 +945,50 @@ func (s *PostgresStore) listAdminBuildsWhere(ctx context.Context, where string, 
 		}
 		builds = append(builds, item)
 	}
-	return builds, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	if err := s.attachBuildArtifacts(ctx, builds); err != nil {
+		return nil, err
+	}
+	return builds, nil
+}
+
+func (s *PostgresStore) attachBuildArtifacts(ctx context.Context, builds []AppBuildJob) error {
+	if len(builds) == 0 {
+		return nil
+	}
+	index := make(map[string]int, len(builds))
+	ids := make([]string, 0, len(builds))
+	for i, build := range builds {
+		index[build.ID] = i
+		ids = append(ids, build.ID)
+	}
+	rows, err := s.db.Query(ctx, `
+		select id::text, build_id::text, name, artifact_type, artifact_path,
+		       file_name, artifact_size, sha256, coalesce(metadata->>'storage_key', ''),
+		       created_at
+		from app_build_artifacts
+		where tenant_id = 'default' and build_id::text = any($1)
+		order by created_at asc, name asc
+	`, ids)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var artifact AppBuildArtifact
+		if err := rows.Scan(&artifact.ID, &artifact.BuildID, &artifact.Name,
+			&artifact.ArtifactType, &artifact.ArtifactPath, &artifact.FileName,
+			&artifact.SizeBytes, &artifact.SHA256, &artifact.StorageKey,
+			&artifact.CreatedAt); err != nil {
+			return err
+		}
+		if i, ok := index[artifact.BuildID]; ok {
+			builds[i].Artifacts = append(builds[i].Artifacts, artifact)
+		}
+	}
+	return rows.Err()
 }
 
 func (s *PostgresStore) listAdminReleases(ctx context.Context) ([]AppReleaseAdmin, error) {

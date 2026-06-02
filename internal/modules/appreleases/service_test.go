@@ -283,6 +283,7 @@ func TestCreateArtifactUsesRequestedAppAndStorageKey(t *testing.T) {
 
 	resp, err := service.CreateArtifact(context.Background(), CreateArtifactRequest{
 		AppKey:       "release-center",
+		ArtifactName: "image-metadata",
 		GitRef:       "main",
 		GitCommit:    "abcdef123456",
 		GitBranch:    "main",
@@ -307,14 +308,17 @@ func TestCreateArtifactUsesRequestedAppAndStorageKey(t *testing.T) {
 	if resp.Job.ArtifactType != "docker_image" || store.build.ArtifactType != "docker_image" {
 		t.Fatalf("expected docker image artifact type, got resp=%+v store=%+v", resp.Job, store.build)
 	}
+	if resp.Artifact == nil || resp.Artifact.Name != "image-metadata" {
+		t.Fatalf("expected artifact details in response, got %+v", resp)
+	}
 	if store.cfg.AppKey != "release-center" {
 		t.Fatalf("expected artifact app_key to select release-center app, got %+v", store.cfg)
 	}
-	if store.build.StorageKey != "app-releases/artifacts/image-metadata.json" {
-		t.Fatalf("expected storage key to reach store, got %+v", store.build)
+	if store.artifact.StorageKey != "app-releases/artifacts/image-metadata.json" {
+		t.Fatalf("expected artifact storage key to reach store, got %+v", store.artifact)
 	}
-	if store.build.ArtifactPath != "/api/v1/app/builds/"+store.build.ID+"/download" {
-		t.Fatalf("expected storage-backed download path, got %+v", store.build)
+	if store.artifact.ArtifactPath != "/api/v1/app/build-artifacts/"+store.artifact.ID+"/download" {
+		t.Fatalf("expected storage-backed artifact download path, got %+v", store.artifact)
 	}
 }
 
@@ -364,6 +368,7 @@ func TestAdminOverviewAppliesConfiguredQualityPolicy(t *testing.T) {
 
 type captureBuildStore struct {
 	build           AppBuildJob
+	artifact        AppBuildArtifact
 	cfg             Config
 	resourceStatus  string
 	resourcePublish bool
@@ -416,6 +421,14 @@ func (s *captureBuildStore) CreateBuild(_ context.Context, build AppBuildJob, cf
 	return build, nil
 }
 
+func (s *captureBuildStore) CreateBuildArtifact(_ context.Context, build AppBuildJob, artifact AppBuildArtifact, cfg Config) (AppBuildJob, AppBuildArtifact, error) {
+	s.build = build
+	s.artifact = artifact
+	s.cfg = cfg
+	build.Artifacts = []AppBuildArtifact{artifact}
+	return build, artifact, nil
+}
+
 func (s *captureBuildStore) SaveWebhookEvent(context.Context, WebhookEventRequest) (WebhookEventAdmin, error) {
 	return WebhookEventAdmin{}, nil
 }
@@ -455,6 +468,10 @@ func (s *captureBuildStore) UpdateResourceNotes(context.Context, string, UpdateN
 }
 
 func (s *captureBuildStore) GetBuildStorageKey(context.Context, string) (string, string, error) {
+	return "", "", errCaptureStoreNotFound
+}
+
+func (s *captureBuildStore) GetBuildArtifactStorageKey(context.Context, string) (string, string, error) {
 	return "", "", errCaptureStoreNotFound
 }
 

@@ -593,6 +593,19 @@ func (h *Handler) DownloadBuild(w http.ResponseWriter, r *http.Request) {
 	h.serveBlob(w, r, storageKey, fileName, contentTypeForFile(fileName))
 }
 
+func (h *Handler) DownloadBuildArtifact(w http.ResponseWriter, r *http.Request) {
+	if h.blobs == nil || h.service.store == nil {
+		httpx.Error(w, r, http.StatusInternalServerError, "app_release.storage_missing", "构建产物存储未配置", nil)
+		return
+	}
+	storageKey, fileName, err := h.service.store.GetBuildArtifactStorageKey(r.Context(), chi.URLParam(r, "artifact_id"))
+	if err != nil {
+		httpx.Error(w, r, http.StatusNotFound, "app_release.artifact_file_not_found", "构建产物不存在", map[string]any{"error": err.Error()})
+		return
+	}
+	h.serveBlob(w, r, storageKey, fileName, contentTypeForFile(fileName))
+}
+
 func (h *Handler) CreateResourceVersion(w http.ResponseWriter, r *http.Request) {
 	if err := r.ParseMultipartForm(256 << 20); err != nil {
 		httpx.Error(w, r, http.StatusBadRequest, "app_resource.invalid_upload", "资源上传格式不正确", map[string]any{"error": err.Error()})

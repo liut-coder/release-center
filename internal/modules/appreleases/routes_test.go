@@ -117,6 +117,8 @@ func TestRoutesExposeBuildDownloadEndpoints(t *testing.T) {
 	for _, path := range []string{
 		"/api/v1/app/builds/build-1/download",
 		"/api/v1/apps/builds/build-1/download",
+		"/api/v1/app/build-artifacts/artifact-1/download",
+		"/api/v1/apps/build-artifacts/artifact-1/download",
 	} {
 		t.Run(path, func(t *testing.T) {
 			rec := httptest.NewRecorder()

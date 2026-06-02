@@ -95,6 +95,19 @@ export interface AppReleaseBuildJob {
   log_tail?: string[];
   error_message?: string;
   release_id?: string;
+  artifacts?: AppBuildArtifact[];
+}
+
+export interface AppBuildArtifact {
+  id: string;
+  build_id?: string;
+  name: string;
+  artifact_type: string;
+  artifact_path?: string;
+  file_name?: string;
+  size_bytes?: number;
+  sha256?: string;
+  created_at?: string;
 }
 
 export interface AppResourcePackage {

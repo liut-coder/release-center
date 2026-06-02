@@ -338,36 +338,102 @@ func (s *Service) CreateBuild(ctx context.Context, req CreateBuildRequest) (Buil
 }
 
 func (s *Service) CreateArtifact(ctx context.Context, req CreateArtifactRequest) (BuildActionResponse, error) {
+	if s.store == nil {
+		return BuildActionResponse{}, fmt.Errorf("store is required")
+	}
 	cfg := s.cfg
 	if strings.TrimSpace(req.AppKey) != "" {
 		cfg.AppKey = strings.TrimSpace(req.AppKey)
 	}
-	service := s
-	if cfg.AppKey != s.cfg.AppKey {
-		service = NewServiceWithStore(cfg, s.store)
+	req.GitRef = strings.TrimSpace(req.GitRef)
+	req.GitCommit = strings.TrimSpace(req.GitCommit)
+	req.GitBranch = strings.TrimSpace(req.GitBranch)
+	req.Channel = normalizeChannel(req.Channel, s.cfg.Channel)
+	req.BuildType = normalizeBuildType(req.BuildType, s.cfg.BuildType)
+	req.VersionName = strings.TrimSpace(req.VersionName)
+	req.ArtifactType = normalizeArtifactType(req.ArtifactType)
+	req.ArtifactURL = strings.TrimSpace(req.ArtifactURL)
+	req.FileName = strings.TrimSpace(req.FileName)
+	req.BuildURL = strings.TrimSpace(req.BuildURL)
+	req.ReleaseNotes = strings.TrimSpace(req.ReleaseNotes)
+	req.Provider = strings.TrimSpace(req.Provider)
+	req.Workflow = strings.TrimSpace(req.Workflow)
+	req.RunID = strings.TrimSpace(req.RunID)
+	artifactName := safeFilePart(firstNonBlank(req.ArtifactName, req.Name, req.ArtifactType, req.FileName, "artifact"))
+	if req.GitRef == "" || req.VersionName == "" || req.VersionCode <= 0 {
+		return BuildActionResponse{}, fmt.Errorf("git_ref, version_name and version_code are required")
 	}
-	return service.CreateBuild(ctx, CreateBuildRequest{
-		GitRef:       req.GitRef,
-		GitCommit:    req.GitCommit,
-		GitBranch:    req.GitBranch,
-		BuildType:    req.BuildType,
-		Channel:      req.Channel,
-		VersionName:  req.VersionName,
-		VersionCode:  req.VersionCode,
-		BuildNumber:  req.BuildNumber,
-		APIBaseURL:   req.BuildURL,
-		ReleaseNotes: req.ReleaseNotes,
+	buildNumber := req.BuildNumber
+	if buildNumber <= 0 {
+		buildNumber = req.VersionCode
+	}
+	cfg.LatestVersionName = req.VersionName
+	cfg.LatestVersionCode = req.VersionCode
+	cfg.BuildNumber = buildNumber
+	cfg.Channel = req.Channel
+	cfg.BuildType = req.BuildType
+	fileName := path.Base(firstNonBlank(req.FileName, req.ArtifactURL, apkFileName(cfg.AppKey, req.VersionName, req.Channel, buildNumber)))
+	artifactID := uuid.NewString()
+	artifactPath := req.ArtifactURL
+	if req.StorageKey != "" {
+		artifactPath = "/api/v1/app/build-artifacts/" + artifactID + "/download"
+	}
+	build := AppBuildJob{
+		ID:               uuid.NewString(),
+		Status:           "success",
+		GitRef:           req.GitRef,
+		GitCommit:        firstNonBlank(req.GitCommit, shortCommitFromRef(req.GitRef)),
+		GitBranch:        firstNonBlank(req.GitBranch, req.GitRef),
+		BuildType:        req.BuildType,
+		Channel:          req.Channel,
+		VersionName:      req.VersionName,
+		VersionCode:      req.VersionCode,
+		BuildNumber:      buildNumber,
+		BuildEnvironment: firstNonBlank(req.Channel, "dev"),
+		ArtifactType:     req.ArtifactType,
+		ArtifactPath:     req.ArtifactURL,
+		ArtifactSize:     req.SizeBytes,
+		SHA256:           req.SHA256,
+		FileName:         fileName,
+		StorageKey:       req.StorageKey,
+		APIBaseURL:       req.BuildURL,
+		ReleaseNotes:     req.ReleaseNotes,
+		StartedBy:        firstNonBlank(req.Provider, "ci"),
+		CreatedAt:        time.Now(),
+		StartedAt:        time.Now(),
+		FinishedAt:       time.Now(),
+		DurationMS:       1,
+		LogTail: []string{
+			"已登记 CI 构建产物",
+			"产物类型：" + req.ArtifactType,
+		},
+	}
+	artifact := AppBuildArtifact{
+		ID:           artifactID,
+		Name:         artifactName,
 		ArtifactType: req.ArtifactType,
-		ArtifactURL:  req.ArtifactURL,
-		FileName:     req.FileName,
-		ArtifactSize: req.SizeBytes,
+		ArtifactPath: artifactPath,
+		FileName:     fileName,
+		SizeBytes:    req.SizeBytes,
 		SHA256:       req.SHA256,
 		StorageKey:   req.StorageKey,
-		Provider:     req.Provider,
-		Workflow:     req.Workflow,
-		RunID:        req.RunID,
-		StartedBy:    req.Provider,
+		CreatedAt:    time.Now(),
+	}
+	created, createdArtifact, err := s.store.CreateBuildArtifact(ctx, build, artifact, cfg)
+	if err != nil {
+		return BuildActionResponse{}, err
+	}
+	_ = s.store.InsertAudit(ctx, "release.artifact_create", "app_build", created.ID, "登记构建产物", map[string]any{
+		"version_name":  created.VersionName,
+		"version_code":  created.VersionCode,
+		"build_number":  created.BuildNumber,
+		"artifact_name": createdArtifact.Name,
+		"artifact_type": createdArtifact.ArtifactType,
+		"provider":      req.Provider,
+		"workflow":      req.Workflow,
+		"run_id":        req.RunID,
 	})
+	return BuildActionResponse{Job: created, Artifact: &createdArtifact, MessageZh: "构建产物已登记"}, nil
 }
 
 func (s *Service) SaveWebhookEvent(ctx context.Context, req WebhookEventRequest) (WebhookEventResponse, error) {

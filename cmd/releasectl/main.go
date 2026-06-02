@@ -66,6 +66,7 @@ func runArtifactUpload(args []string) error {
 	password := fs.String("password", env("GAME_HELPER_ADMIN_PASSWORD", ""), "admin password")
 	filePath := fs.String("file", "", "artifact file to upload")
 	appKey := fs.String("app-key", "game-helper-android", "app key")
+	artifactName := fs.String("artifact-name", "", "artifact name within the build")
 	gitRef := fs.String("git-ref", env("GITHUB_REF_NAME", env("GITEA_REF_NAME", "")), "git ref or branch")
 	gitCommit := fs.String("git-commit", env("GITHUB_SHA", env("GITEA_SHA", "")), "git commit sha")
 	gitBranch := fs.String("git-branch", "", "git branch")
@@ -74,7 +75,7 @@ func runArtifactUpload(args []string) error {
 	versionName := fs.String("version-name", "", "app versionName")
 	versionCode := fs.Int("version-code", 0, "app versionCode")
 	buildNumber := fs.Int("build-number", 0, "CI build number")
-	artifactType := fs.String("artifact-type", "apk", "apk, aab, zip, web_dist, or artifact")
+	artifactType := fs.String("artifact-type", "apk", "apk, aab, zip, web_dist, binary, docker_image, or artifact")
 	artifactURL := fs.String("artifact-url", "", "existing artifact URL to register")
 	fileName := fs.String("file-name", "", "artifact file name when registering a URL")
 	sizeBytes := fs.Int64("size-bytes", 0, "artifact size when registering a URL")
@@ -110,6 +111,7 @@ func runArtifactUpload(args []string) error {
 	}
 	req := appreleases.CreateArtifactRequest{
 		AppKey:       *appKey,
+		ArtifactName: *artifactName,
 		GitRef:       *gitRef,
 		GitCommit:    *gitCommit,
 		GitBranch:    *gitBranch,

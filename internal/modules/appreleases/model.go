@@ -231,34 +231,48 @@ type AppAdminSummary struct {
 }
 
 type AppBuildJob struct {
-	ID               string    `json:"id"`
-	Status           string    `json:"status"`
-	AppID            string    `json:"app_id,omitempty"`
-	GitRef           string    `json:"git_ref"`
-	GitCommit        string    `json:"git_commit,omitempty"`
-	GitBranch        string    `json:"git_branch,omitempty"`
-	BuildType        string    `json:"build_type"`
-	Channel          string    `json:"channel"`
-	VersionName      string    `json:"version_name"`
-	VersionCode      int       `json:"version_code"`
-	BuildNumber      int       `json:"build_number"`
-	BuildEnvironment string    `json:"build_environment,omitempty"`
-	ArtifactType     string    `json:"artifact_type,omitempty"`
-	ArtifactPath     string    `json:"artifact_path,omitempty"`
-	ArtifactSize     int64     `json:"artifact_size,omitempty"`
-	SHA256           string    `json:"sha256,omitempty"`
-	FileName         string    `json:"file_name,omitempty"`
-	StorageKey       string    `json:"-"`
-	APIBaseURL       string    `json:"api_base_url,omitempty"`
-	ReleaseNotes     string    `json:"release_notes,omitempty"`
-	StartedBy        string    `json:"started_by,omitempty"`
-	StartedAt        time.Time `json:"started_at,omitempty"`
-	CreatedAt        time.Time `json:"created_at"`
-	FinishedAt       time.Time `json:"finished_at,omitempty"`
-	DurationMS       int       `json:"duration_ms,omitempty"`
-	LogTail          []string  `json:"log_tail,omitempty"`
-	ErrorMessage     string    `json:"error_message,omitempty"`
-	ReleaseID        string    `json:"release_id,omitempty"`
+	ID               string             `json:"id"`
+	Status           string             `json:"status"`
+	AppID            string             `json:"app_id,omitempty"`
+	GitRef           string             `json:"git_ref"`
+	GitCommit        string             `json:"git_commit,omitempty"`
+	GitBranch        string             `json:"git_branch,omitempty"`
+	BuildType        string             `json:"build_type"`
+	Channel          string             `json:"channel"`
+	VersionName      string             `json:"version_name"`
+	VersionCode      int                `json:"version_code"`
+	BuildNumber      int                `json:"build_number"`
+	BuildEnvironment string             `json:"build_environment,omitempty"`
+	ArtifactType     string             `json:"artifact_type,omitempty"`
+	ArtifactPath     string             `json:"artifact_path,omitempty"`
+	ArtifactSize     int64              `json:"artifact_size,omitempty"`
+	SHA256           string             `json:"sha256,omitempty"`
+	FileName         string             `json:"file_name,omitempty"`
+	StorageKey       string             `json:"-"`
+	APIBaseURL       string             `json:"api_base_url,omitempty"`
+	ReleaseNotes     string             `json:"release_notes,omitempty"`
+	StartedBy        string             `json:"started_by,omitempty"`
+	StartedAt        time.Time          `json:"started_at,omitempty"`
+	CreatedAt        time.Time          `json:"created_at"`
+	FinishedAt       time.Time          `json:"finished_at,omitempty"`
+	DurationMS       int                `json:"duration_ms,omitempty"`
+	LogTail          []string           `json:"log_tail,omitempty"`
+	ErrorMessage     string             `json:"error_message,omitempty"`
+	ReleaseID        string             `json:"release_id,omitempty"`
+	Artifacts        []AppBuildArtifact `json:"artifacts,omitempty"`
+}
+
+type AppBuildArtifact struct {
+	ID           string    `json:"id"`
+	BuildID      string    `json:"build_id,omitempty"`
+	Name         string    `json:"name"`
+	ArtifactType string    `json:"artifact_type"`
+	ArtifactPath string    `json:"artifact_path,omitempty"`
+	FileName     string    `json:"file_name,omitempty"`
+	SizeBytes    int64     `json:"size_bytes,omitempty"`
+	SHA256       string    `json:"sha256,omitempty"`
+	StorageKey   string    `json:"-"`
+	CreatedAt    time.Time `json:"created_at,omitempty"`
 }
 
 type AppReleaseAdmin struct {
@@ -470,6 +484,8 @@ type CreateBuildRequest struct {
 
 type CreateArtifactRequest struct {
 	AppKey       string `json:"app_key"`
+	ArtifactName string `json:"artifact_name"`
+	Name         string `json:"name"`
 	GitRef       string `json:"git_ref"`
 	GitCommit    string `json:"git_commit"`
 	GitBranch    string `json:"git_branch"`
@@ -586,8 +602,9 @@ type AdminActionResponse struct {
 }
 
 type BuildActionResponse struct {
-	Job       AppBuildJob `json:"job"`
-	MessageZh string      `json:"message_zh,omitempty"`
+	Job       AppBuildJob       `json:"job"`
+	Artifact  *AppBuildArtifact `json:"artifact,omitempty"`
+	MessageZh string            `json:"message_zh,omitempty"`
 }
 
 type AppActionResponse struct {
