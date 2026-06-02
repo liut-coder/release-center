@@ -414,7 +414,7 @@ cd web && npm run smoke:browser
 
 本地 RBAC server smoke 结果：`release.admin` token 可读取发布中心和初始化后台 overview，overview 只返回首页和发布中心菜单，不返回系统管理菜单和系统管理数据；`release.admin` 写 `/admin/api/system/users` 返回 403；`system.admin` 写 `/admin/api/system/users` 返回 200。
 
-本地浏览器 smoke 结果：已安装 Playwright Chromium，`npm run smoke:browser` 通过 4 个用例，覆盖桌面和移动视口、`release.admin` / `system.admin` 登录、RBAC 菜单裁剪、系统管理页、App 发布页、控制台错误、页面错误、Admin/API 5xx 监听和页面横向溢出检查。生产环境仍需对真实域名、真实 PostgreSQL 和生产 token 映射复跑。
+本地浏览器 smoke 结果：已安装 Playwright Chromium，`npm run smoke:browser` 通过 4 个用例，覆盖桌面和移动视口、`release.admin` / `system.admin` 登录、RBAC 菜单裁剪、系统管理页、App 发版中心概览 / 构建记录 / App 发布 / 资源增量 / 设备版本 / 升级统计 / 升级事件 / 操作审计、控制台错误、页面错误、Admin/API 5xx 监听和页面横向溢出检查。生产环境仍需对真实域名、真实 PostgreSQL 和生产 token 映射复跑。
 
 结果：当前 `/root/release-center` Go module 验证通过：
 

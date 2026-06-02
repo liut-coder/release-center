@@ -17,7 +17,7 @@
 | 资源安全 | 增量资源白名单、ZIP 内容校验、禁止执行代码、SHA-256、文件大小校验和 Manifest Ed25519 签名已落地 |
 | 自动保护 | `activation_failed` 会自动暂停匹配资源版本，写入 `paused_at` 并记录 `resource.auto_pause` 审计 |
 | 质量观察 | overview API 输出 `quality_metrics`、`quality_policy`、`quality_alerts`；Web 统计页展示成功率、失败率、失败原因、阈值、策略建议和质量告警 |
-| 本机验证 | `go test ./...`、`go build -buildvcs=false ./cmd/server ./cmd/releasectl ./cmd/migrate`、`cd web && npm run smoke:browser` 已通过；系统管理 API 已在无数据库 Demo fallback 模式 smoke；浏览器 smoke 覆盖桌面/移动 Chromium、登录、RBAC 菜单裁剪、系统页、App 发布页、运行时错误监听和页面横向溢出检查；真实 DB smoke 覆盖迁移、发布、资源发布、检查更新和自动暂停 |
+| 本机验证 | `go test ./...`、`go build -buildvcs=false ./cmd/server ./cmd/releasectl ./cmd/migrate`、`cd web && npm run smoke:browser` 已通过；系统管理 API 已在无数据库 Demo fallback 模式 smoke；浏览器 smoke 覆盖桌面/移动 Chromium、登录、RBAC 菜单裁剪、系统页、App 发版中心关键标签页、运行时错误监听和页面横向溢出检查；真实 DB smoke 覆盖迁移、发布、资源发布、检查更新和自动暂停 |
 | 外部待验收 | 生产 18080 migration/重启、系统管理真实 PostgreSQL 环境 smoke、生产环境浏览器 smoke、真实 APK Android 安装升级 smoke、真实资源 Android 下载/验签/激活/回滚 smoke 仍需继续推进 |
 
 ## 当前项目推进与优化点
@@ -139,7 +139,7 @@ cd web && npm run build
 cd web && npm run smoke:browser
 ```
 
-该命令会先构建 `web/dist`，再启动 Go server 托管生产产物，并用 Chromium 桌面和移动视口验证登录、RBAC 菜单裁剪、系统管理页、App 发布页、控制台错误、页面错误、Admin/API 5xx 和页面横向溢出。
+该命令会先构建 `web/dist`，再启动 Go server 托管生产产物，并用 Chromium 桌面和移动视口验证登录、RBAC 菜单裁剪、系统管理页、App 发版中心概览 / 构建记录 / App 发布 / 资源增量 / 设备版本 / 升级统计 / 升级事件 / 操作审计、控制台错误、页面错误、Admin/API 5xx 和页面横向溢出。
 
 构建产物位于 `web/dist`。`cmd/server` 默认通过 `WEB_DIST=web/dist` 托管后台页面，`GET /` 返回管理控制台；API 路径 `/api/*` 和 `/admin/api/*` 不会被 SPA fallback 抢占。
 

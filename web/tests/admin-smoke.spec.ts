@@ -13,10 +13,9 @@ test.describe("admin console smoke", () => {
     await expect(page.getByText("发布中心", { exact: true }).first()).toBeVisible();
 
     await navButton(page, "发布中心").click();
-    await expect(page.getByRole("heading", { name: "App 发布" })).toBeVisible();
-    await expect(page.getByRole("button", { name: "刷新" })).toBeVisible();
+    await expectAppReleaseShell(page);
     await expect(page.getByText("正式版本")).toBeVisible();
-    await expectNoPageOverflow(page);
+    await verifyAppReleaseTabs(page);
 
     expect(errors(), "browser runtime errors").toEqual([]);
   });
@@ -52,6 +51,54 @@ async function loginAs(page: Page, token: string, account: string) {
   await page.getByRole("button", { name: "登录" }).click();
   await expect(page.getByText("已认证")).toBeVisible();
   await expect(page.getByText("首页").first()).toBeVisible();
+}
+
+async function expectAppReleaseShell(page: Page) {
+  await expect(page.getByRole("heading", { name: "App 发布" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "刷新" })).toBeVisible();
+  await expectNoPageOverflow(page);
+}
+
+async function verifyAppReleaseTabs(page: Page) {
+  await releaseTab(page, "构建记录").click();
+  await expect(page.getByText("构建新版本")).toBeVisible();
+  await expect(page.getByPlaceholder("branch / tag / commit")).toBeVisible();
+  await expect(page.getByPlaceholder("apiBaseUrl")).toHaveValue(/\/$/);
+  await expect(page.getByRole("button", { name: "创建构建任务" })).toBeVisible();
+  await expectNoPageOverflow(page);
+
+  await releaseTab(page, "App 发布").click();
+  await expect(page.getByText("创建 App 发布")).toBeVisible();
+  await expect(page.getByRole("button", { name: "创建发布草稿" })).toBeVisible();
+  await expect(page.getByPlaceholder("搜索版本 / commit / 文件名")).toBeVisible();
+  await expectNoPageOverflow(page);
+
+  await releaseTab(page, "资源增量").click();
+  await expect(page.getByText("创建资源增量发布")).toBeVisible();
+  await expect(page.getByPlaceholder("resourceVersion")).toBeVisible();
+  await expect(page.getByRole("button", { name: "创建资源版本" })).toBeVisible();
+  await expectNoPageOverflow(page);
+
+  await releaseTab(page, "设备版本").click();
+  await expect(page.getByPlaceholder("搜索设备 / 用户 / App 版本 / 资源版本")).toBeVisible();
+  await expectNoPageOverflow(page);
+
+  await releaseTab(page, "升级统计").click();
+  await expect(page.getByText("升级概况")).toBeVisible();
+  await expect(page.getByText("事件分布")).toBeVisible();
+  await expectNoPageOverflow(page);
+
+  await releaseTab(page, "升级事件").click();
+  await expect(page.getByPlaceholder("搜索设备 / 事件 / 资源包 / 错误")).toBeVisible();
+  await expectNoPageOverflow(page);
+
+  await releaseTab(page, "操作审计").click();
+  await expect(page.getByPlaceholder("搜索操作人 / 动作 / 对象")).toBeVisible();
+  await expectNoPageOverflow(page);
+}
+
+function releaseTab(page: Page, name: string) {
+  return page.getByRole("button", { name, exact: true });
 }
 
 function navButton(page: Page, name: string) {
