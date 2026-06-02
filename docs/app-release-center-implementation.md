@@ -13,11 +13,11 @@
 | 后端 API | App 管理、构建登记、APK 发布、资源发布、灰度、暂停、召回、回滚、下载、事件上报、heartbeat、task-preflight、审计均已落地 |
 | PostgreSQL | 一期 schema migration 覆盖 apps、builds、releases、resource versions、installations、update events、webhook events、audit events；系统管理 migration 覆盖用户、角色、权限、字典和菜单 |
 | CLI / CI | `releasectl` 覆盖 artifact upload、resource pack/upload、Manifest 公钥导出和验签；Makefile 和 GitHub Actions 覆盖 test/build/resource catalog smoke |
-| 后台 Web | `web/` 独立 Vite 管理台已具备登录入口、首页、系统管理页面和 App 发版中心业务模块；用户/角色/权限/数据字典/菜单编辑已从前端本地示例状态切到后端 API 数据 |
+| 后台 Web | `web/` 独立 Vite 管理台已具备登录入口、首页、系统管理页面和 App 发版中心业务模块；用户/角色/权限/数据字典/菜单编辑已从前端本地示例状态切到后端 API 数据，菜单可见性已驱动侧栏导航和首页模块入口 |
 | 资源安全 | 增量资源白名单、ZIP 内容校验、禁止执行代码、SHA-256、文件大小校验和 Manifest Ed25519 签名已落地 |
 | 自动保护 | `activation_failed` 会自动暂停匹配资源版本，写入 `paused_at` 并记录 `resource.auto_pause` 审计 |
 | 质量观察 | overview API 输出 `quality_metrics`、`quality_policy`、`quality_alerts`；Web 统计页展示成功率、失败率、失败原因、阈值、策略建议和质量告警 |
-| 本机验证 | `go test ./...`、`go build -buildvcs=false ./cmd/server ./cmd/releasectl ./cmd/migrate`、`cd web && npm run build` 已通过；系统管理 API 已在 19081 无数据库 Demo fallback 模式 smoke；真实 DB smoke 覆盖迁移、发布、资源发布、检查更新和自动暂停 |
+| 本机验证 | `go test ./...`、`go build -buildvcs=false ./cmd/server ./cmd/releasectl ./cmd/migrate`、`cd web && npm run build` 已通过；系统管理 API 已在 19082 无数据库 Demo fallback 模式 smoke；真实 DB smoke 覆盖迁移、发布、资源发布、检查更新和自动暂停 |
 | 外部待验收 | 生产 18080 migration/重启、系统管理真实 PostgreSQL 环境 smoke、RBAC API 权限拦截、真实 APK Android 安装升级 smoke、真实资源 Android 下载/验签/激活/回滚 smoke 仍需继续推进 |
 
 ## 当前项目推进与优化点
@@ -32,7 +32,7 @@
 - 资源安全闭环：增量资源白名单、ZIP 内容校验、禁止执行代码、SHA-256、文件大小校验、Manifest Ed25519 签名已落地。
 - 发布保护闭环：资源 `activation_failed` 会自动暂停对应资源版本，并写入 `resource.auto_pause` 审计。
 - 观测闭环：overview API 和 Web 统计页已展示 APK/资源成功率、失败率、失败原因、质量阈值、策略建议和质量告警。
-- 系统管理闭环：已新增用户、角色、权限、数据字典、菜单 PostgreSQL 表和 Admin API，前端系统管理页面已接入后端 overview/create/enable/disable/show/hide 接口；无数据库时后端提供 Demo fallback 便于本地调试。
+- 系统管理闭环：已新增用户、角色、权限、数据字典、菜单 PostgreSQL 表和 Admin API，前端系统管理页面已接入后端 overview/create/enable/disable/show/hide 接口；菜单 visible 状态驱动侧栏导航和首页模块入口；无数据库时后端提供进程内可变 Demo fallback 便于本地调试。
 - 前端闭环：`web/` 已形成独立 Vite 管理台，具备登录、首页、系统管理页面和 App 发版中心业务模块。
 - 本地验证闭环：Go test、Go build、Web build 和真实 DB smoke 均已跑通，覆盖迁移、发布、检查更新、资源发布和自动暂停。
 
@@ -130,10 +130,10 @@ cd web && npm run build
 
 - 登录页：写入 `release-center-admin-token`，用于真实后台 API Bearer 鉴权。
 - 首页：展示系统模块、用户/角色/权限/字典统计和快捷入口，统计来自系统管理 overview API。
-- 系统管理：包含用户管理、角色管理、权限管理、数据字典和菜单编辑页面，新增、启停、显示隐藏操作通过后端 API 执行并刷新 React Query 缓存。
+- 系统管理：包含用户管理、角色管理、权限管理、数据字典和菜单编辑页面，新增、启停、显示隐藏操作通过后端 API 执行并刷新 React Query 缓存；菜单 visible 状态会影响侧栏导航和首页模块入口。
 - 业务模块：App 发版中心作为菜单项接入，继续覆盖 App、构建、发布、资源、设备、统计、事件和审计。
 
-系统管理页面已不再依赖前端本地 seed 状态。当前后端提供 `SystemManagementStore`，PostgreSQL 环境读写 `system_users`、`system_roles`、`system_permissions`、`system_dictionaries`、`system_menus`；无数据库 store 时返回后端 Demo 数据，方便本地调试页面。系统管理写操作会调用 `InsertAudit` 记录操作审计。下一步需要把登录身份、角色权限和菜单可见性接入服务端 RBAC middleware。后台审计页会突出显示 `resource.auto_pause` 自动保护记录，资源列表会展示 paused 资源的 `paused_at` 暂停时间。
+系统管理页面已不再依赖前端本地 seed 状态。当前后端提供 `SystemManagementStore`，PostgreSQL 环境读写 `system_users`、`system_roles`、`system_permissions`、`system_dictionaries`、`system_menus`；无数据库 store 时使用进程内 Demo 状态，方便本地调试新增、启停和菜单显隐。系统管理写操作会调用 `InsertAudit` 记录操作审计。下一步需要把登录身份、角色权限和菜单可见性接入服务端 RBAC middleware。后台审计页会突出显示 `resource.auto_pause` 自动保护记录，资源列表会展示 paused 资源的 `paused_at` 暂停时间。
 
 ## 文档中心推进计划
 
@@ -340,16 +340,17 @@ make smoke-db
 go test ./...
 go build -buildvcs=false ./cmd/server ./cmd/releasectl ./cmd/migrate
 cd web && npm run build
-env -u DATABASE_URL ADDR=127.0.0.1:19081 FILE_ROOT=/tmp/release-center-files WEB_DIST=web/dist ADMIN_TOKEN=dev go run -buildvcs=false ./cmd/server
-curl -i http://127.0.0.1:19081/healthz
-curl -H 'Authorization: Bearer dev' http://127.0.0.1:19081/admin/api/system/overview
-curl -H 'Authorization: Bearer dev' -H 'Content-Type: application/json' -d '{"name":"Smoke 用户","account":"smoke.user","role_code":"release_viewer","department":"平台工程","status":"enabled"}' http://127.0.0.1:19081/admin/api/system/users
-curl -H 'Authorization: Bearer dev' -H 'Content-Type: application/json' -d '{"title":"Smoke 菜单","path":"/smoke","icon":"Settings","parent":"系统管理","sort":90,"visible":true}' http://127.0.0.1:19081/admin/api/system/menus
+env -u DATABASE_URL ADDR=127.0.0.1:19082 FILE_ROOT=/tmp/release-center-files WEB_DIST=web/dist ADMIN_TOKEN=dev go run -buildvcs=false ./cmd/server
+curl -i http://127.0.0.1:19082/healthz
+curl -H 'Authorization: Bearer dev' http://127.0.0.1:19082/admin/api/system/overview
+curl -H 'Authorization: Bearer dev' -X POST http://127.0.0.1:19082/admin/api/system/menus/{menu_id}/hide
+curl -H 'Authorization: Bearer dev' http://127.0.0.1:19082/admin/api/system/overview
+curl -H 'Authorization: Bearer dev' -X POST http://127.0.0.1:19082/admin/api/system/menus/{menu_id}/show
 ```
 
 GitHub Actions 已提供 `.github/workflows/release-center-ci.yml`，执行 test、build 和 resource catalog smoke。
 
-本次系统管理 API smoke 结果：19081 无数据库 Demo fallback 模式下，`/healthz` 返回 204，`/admin/api/system/overview` 返回用户、角色、权限、字典、菜单数据，新增用户和新增菜单接口返回 200。Go server 同源托管 `web/dist`，`GET /` 返回构建后的后台 HTML。
+本次系统管理 API smoke 结果：19082 无数据库 Demo fallback 模式下，`/healthz` 返回 204，`/admin/api/system/overview` 返回用户、角色、权限、字典、菜单数据；菜单 hide 后 action 返回 `visible=false`，再次读取 overview 仍为 `false`；菜单 show 后 action 返回 `visible=true`，再次读取 overview 仍为 `true`。Go server 同源托管 `web/dist`，`GET /` 返回构建后的后台 HTML。
 
 浏览器自动化说明：当前机器未安装 Chromium、Playwright 或 Puppeteer，本次没有执行可视化点击验收。已完成前端 TypeScript/Vite 构建、Go server 同源 HTML 返回和系统管理 API smoke；生产或具备浏览器环境后仍需补一次页面点击 smoke。
 

@@ -29,7 +29,7 @@
 - Manifest Ed25519 签名已接入资源打包和后台上传链路，`releasectl` 已提供公钥导出和本地验签命令。
 - Go server 已托管 `WEB_DIST=web/dist`，`GET /` 返回后台页面，`/api/*` 和 `/admin/api/*` 保持 API 行为。
 - 系统管理已新增用户、角色、权限、数据字典、菜单 PostgreSQL migration、Admin API 和前端 API 客户端。
-- 后台系统管理页面已从前端本地示例状态切换到后端 overview/create/enable/disable/show/hide 接口，操作后通过 React Query 刷新。
+- 后台系统管理页面已从前端本地示例状态切换到后端 overview/create/enable/disable/show/hide 接口，操作后通过 React Query 刷新；菜单 visible 状态已驱动侧栏导航和首页模块入口。
 - 本机 PostgreSQL 临时 schema 已完成真实 DB smoke，覆盖迁移、APK URL 登记、发布、update-check、资源上传发布、resource-check、activation_failed 自动暂停和审计。
 
 当前已落地 SHA-256、文件大小、ZIP 内容校验、Manifest Ed25519 签名和禁止执行代码增量发布。Android 客户端内置公钥验签仍需在客户端工程和真机 smoke 中确认。
@@ -39,7 +39,7 @@
 | 方向 | 当前状态 | 仍需外部确认 |
 |---|---|---|
 | 后端闭环 | App / build / release / resource / event / heartbeat / preflight / audit API 已落地 | 生产 18080 使用真实 `DATABASE_URL` 执行迁移并重启 |
-| 前端闭环 | `web/` 管理台已具备登录、首页、系统管理页面、用户/角色/权限/数据字典/菜单后端数据接入和 App 发版中心业务模块 | RBAC 权限拦截和生产静态资源浏览器 smoke |
+| 前端闭环 | `web/` 管理台已具备登录、首页、系统管理页面、用户/角色/权限/数据字典/菜单后端数据接入、菜单驱动导航和 App 发版中心业务模块 | RBAC 权限拦截和生产静态资源浏览器 smoke |
 | CLI / CI | `releasectl` 覆盖 APK URL/文件登记、资源打包上传、公钥导出、Manifest 验签；workflow 覆盖基础 smoke | 受保护 CI 环境配置真实 token 后跑发布链路 |
 | APK 更新 | 发布、灰度、下载、update-check、SHA-256 信息输出已闭环 | Android 真机下载安装、校验和系统安装器 smoke |
 | 资源增量 | 白名单、ZIP 校验、Manifest、下载、resource-check、自动暂停已闭环 | Android 真机下载、Ed25519 验签、解压激活、失败回滚 smoke |

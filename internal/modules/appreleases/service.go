@@ -5,19 +5,30 @@ import (
 	"fmt"
 	"path"
 	"strings"
+	"sync"
 )
 
 type Service struct {
-	cfg   Config
-	store Store
+	cfg        Config
+	store      Store
+	systemDemo *systemDemoState
 }
 
 func NewService(cfg Config) *Service {
-	return &Service{cfg: normalizeConfig(cfg)}
+	return &Service{cfg: normalizeConfig(cfg), systemDemo: newSystemDemoState()}
 }
 
 func NewServiceWithStore(cfg Config, store Store) *Service {
-	return &Service{cfg: normalizeConfig(cfg), store: store}
+	return &Service{cfg: normalizeConfig(cfg), store: store, systemDemo: newSystemDemoState()}
+}
+
+type systemDemoState struct {
+	mu       sync.Mutex
+	overview SystemManagementOverview
+}
+
+func newSystemDemoState() *systemDemoState {
+	return &systemDemoState{overview: demoSystemManagementOverview()}
 }
 
 func (s *Service) SyncConfiguredRelease(ctx context.Context) error {

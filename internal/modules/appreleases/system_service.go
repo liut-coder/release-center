@@ -17,7 +17,7 @@ func (s *Service) SystemManagementOverview(ctx context.Context) (SystemManagemen
 		overview.MessageZh = "系统管理数据已读取"
 		return overview, nil
 	}
-	overview := demoSystemManagementOverview()
+	overview := s.demoSystemOverview()
 	overview.MessageZh = "系统管理使用后端 Demo 数据"
 	return overview, nil
 }
@@ -39,7 +39,7 @@ func (s *Service) CreateSystemUser(ctx context.Context, req CreateSystemUserRequ
 		s.insertSystemAudit(ctx, "system.user.create", "system_user", user.ID, map[string]any{"account": user.Account, "role_code": user.RoleCode})
 		return SystemUserActionResponse{OK: true, User: user, MessageZh: "用户已保存"}, nil
 	}
-	user := demoSystemUser(req)
+	user := s.createDemoSystemUser(req)
 	return SystemUserActionResponse{OK: true, User: user, MessageZh: "用户已保存到 Demo 响应"}, nil
 }
 
@@ -58,7 +58,7 @@ func (s *Service) SystemUserAction(ctx context.Context, id, action string) (Syst
 		s.insertSystemAudit(ctx, "system.user."+action, "system_user", user.ID, map[string]any{"status": user.Status})
 		return SystemUserActionResponse{OK: true, User: user, MessageZh: "用户状态已更新"}, nil
 	}
-	return SystemUserActionResponse{OK: true, User: demoSystemUser(CreateSystemUserRequest{Name: "Demo 用户", Account: id, Status: status}), MessageZh: "用户状态已更新到 Demo 响应"}, nil
+	return SystemUserActionResponse{OK: true, User: s.updateDemoSystemUserStatus(strings.TrimSpace(id), status), MessageZh: "用户状态已更新到 Demo 响应"}, nil
 }
 
 func (s *Service) CreateSystemRole(ctx context.Context, req CreateSystemRoleRequest) (SystemRoleActionResponse, error) {
@@ -77,7 +77,7 @@ func (s *Service) CreateSystemRole(ctx context.Context, req CreateSystemRoleRequ
 		s.insertSystemAudit(ctx, "system.role.create", "system_role", role.ID, map[string]any{"code": role.Code})
 		return SystemRoleActionResponse{OK: true, Role: role, MessageZh: "角色已保存"}, nil
 	}
-	role := demoSystemRole(req)
+	role := s.createDemoSystemRole(req)
 	return SystemRoleActionResponse{OK: true, Role: role, MessageZh: "角色已保存到 Demo 响应"}, nil
 }
 
@@ -94,7 +94,7 @@ func (s *Service) SystemRoleAction(ctx context.Context, id, action string) (Syst
 		s.insertSystemAudit(ctx, "system.role."+action, "system_role", role.ID, map[string]any{"enabled": role.Enabled})
 		return SystemRoleActionResponse{OK: true, Role: role, MessageZh: "角色状态已更新"}, nil
 	}
-	return SystemRoleActionResponse{OK: true, Role: demoSystemRole(CreateSystemRoleRequest{Name: "Demo 角色", Code: id, Enabled: &enabled}), MessageZh: "角色状态已更新到 Demo 响应"}, nil
+	return SystemRoleActionResponse{OK: true, Role: s.updateDemoSystemRoleEnabled(strings.TrimSpace(id), enabled), MessageZh: "角色状态已更新到 Demo 响应"}, nil
 }
 
 func (s *Service) CreateSystemPermission(ctx context.Context, req CreateSystemPermissionRequest) (SystemPermissionActionResponse, error) {
@@ -113,7 +113,7 @@ func (s *Service) CreateSystemPermission(ctx context.Context, req CreateSystemPe
 		s.insertSystemAudit(ctx, "system.permission.create", "system_permission", permission.ID, map[string]any{"code": permission.Code})
 		return SystemPermissionActionResponse{OK: true, Permission: permission, MessageZh: "权限已保存"}, nil
 	}
-	permission := demoSystemPermission(req)
+	permission := s.createDemoSystemPermission(req)
 	return SystemPermissionActionResponse{OK: true, Permission: permission, MessageZh: "权限已保存到 Demo 响应"}, nil
 }
 
@@ -130,7 +130,7 @@ func (s *Service) SystemPermissionAction(ctx context.Context, id, action string)
 		s.insertSystemAudit(ctx, "system.permission."+action, "system_permission", permission.ID, map[string]any{"enabled": permission.Enabled})
 		return SystemPermissionActionResponse{OK: true, Permission: permission, MessageZh: "权限状态已更新"}, nil
 	}
-	return SystemPermissionActionResponse{OK: true, Permission: demoSystemPermission(CreateSystemPermissionRequest{Name: "Demo 权限", Code: id, Enabled: &enabled}), MessageZh: "权限状态已更新到 Demo 响应"}, nil
+	return SystemPermissionActionResponse{OK: true, Permission: s.updateDemoSystemPermissionEnabled(strings.TrimSpace(id), enabled), MessageZh: "权限状态已更新到 Demo 响应"}, nil
 }
 
 func (s *Service) CreateSystemDictionary(ctx context.Context, req CreateSystemDictionaryRequest) (SystemDictionaryActionResponse, error) {
@@ -152,7 +152,7 @@ func (s *Service) CreateSystemDictionary(ctx context.Context, req CreateSystemDi
 		s.insertSystemAudit(ctx, "system.dictionary.create", "system_dictionary", dictionary.ID, map[string]any{"group": dictionary.Group, "key": dictionary.Key})
 		return SystemDictionaryActionResponse{OK: true, Dictionary: dictionary, MessageZh: "字典项已保存"}, nil
 	}
-	dictionary := demoSystemDictionary(req)
+	dictionary := s.createDemoSystemDictionary(req)
 	return SystemDictionaryActionResponse{OK: true, Dictionary: dictionary, MessageZh: "字典项已保存到 Demo 响应"}, nil
 }
 
@@ -169,7 +169,7 @@ func (s *Service) SystemDictionaryAction(ctx context.Context, id, action string)
 		s.insertSystemAudit(ctx, "system.dictionary."+action, "system_dictionary", dictionary.ID, map[string]any{"enabled": dictionary.Enabled})
 		return SystemDictionaryActionResponse{OK: true, Dictionary: dictionary, MessageZh: "字典项状态已更新"}, nil
 	}
-	return SystemDictionaryActionResponse{OK: true, Dictionary: demoSystemDictionary(CreateSystemDictionaryRequest{Group: "demo", Key: id, Label: "Demo 字典", Enabled: &enabled}), MessageZh: "字典项状态已更新到 Demo 响应"}, nil
+	return SystemDictionaryActionResponse{OK: true, Dictionary: s.updateDemoSystemDictionaryEnabled(strings.TrimSpace(id), enabled), MessageZh: "字典项状态已更新到 Demo 响应"}, nil
 }
 
 func (s *Service) CreateSystemMenu(ctx context.Context, req CreateSystemMenuRequest) (SystemMenuActionResponse, error) {
@@ -191,7 +191,7 @@ func (s *Service) CreateSystemMenu(ctx context.Context, req CreateSystemMenuRequ
 		s.insertSystemAudit(ctx, "system.menu.create", "system_menu", menu.ID, map[string]any{"path": menu.Path})
 		return SystemMenuActionResponse{OK: true, Menu: menu, MessageZh: "菜单已保存"}, nil
 	}
-	menu := demoSystemMenu(req)
+	menu := s.createDemoSystemMenu(req)
 	return SystemMenuActionResponse{OK: true, Menu: menu, MessageZh: "菜单已保存到 Demo 响应"}, nil
 }
 
@@ -208,7 +208,7 @@ func (s *Service) SystemMenuAction(ctx context.Context, id, action string) (Syst
 		s.insertSystemAudit(ctx, "system.menu."+action, "system_menu", menu.ID, map[string]any{"visible": menu.Visible})
 		return SystemMenuActionResponse{OK: true, Menu: menu, MessageZh: "菜单显示状态已更新"}, nil
 	}
-	return SystemMenuActionResponse{OK: true, Menu: demoSystemMenu(CreateSystemMenuRequest{Title: "Demo 菜单", Path: "/" + safeCode(id), Visible: &visible}), MessageZh: "菜单显示状态已更新到 Demo 响应"}, nil
+	return SystemMenuActionResponse{OK: true, Menu: s.updateDemoSystemMenuVisible(strings.TrimSpace(id), visible), MessageZh: "菜单显示状态已更新到 Demo 响应"}, nil
 }
 
 func (s *Service) insertSystemAudit(ctx context.Context, action, targetType, targetID string, metadata map[string]any) {
@@ -254,6 +254,167 @@ func normalizeStringList(values []string) []string {
 
 func safeCode(value string) string {
 	return safeFilePart(value)
+}
+
+func (s *Service) demoSystemOverview() SystemManagementOverview {
+	if s.systemDemo == nil {
+		s.systemDemo = newSystemDemoState()
+	}
+	s.systemDemo.mu.Lock()
+	defer s.systemDemo.mu.Unlock()
+	return cloneSystemOverview(s.systemDemo.overview)
+}
+
+func (s *Service) createDemoSystemUser(req CreateSystemUserRequest) SystemUserAdmin {
+	if s.systemDemo == nil {
+		s.systemDemo = newSystemDemoState()
+	}
+	s.systemDemo.mu.Lock()
+	defer s.systemDemo.mu.Unlock()
+	user := demoSystemUser(req)
+	s.systemDemo.overview.Users = append([]SystemUserAdmin{user}, s.systemDemo.overview.Users...)
+	return user
+}
+
+func (s *Service) updateDemoSystemUserStatus(id, status string) SystemUserAdmin {
+	if s.systemDemo == nil {
+		s.systemDemo = newSystemDemoState()
+	}
+	s.systemDemo.mu.Lock()
+	defer s.systemDemo.mu.Unlock()
+	for index, user := range s.systemDemo.overview.Users {
+		if user.ID == id {
+			s.systemDemo.overview.Users[index].Status = status
+			return s.systemDemo.overview.Users[index]
+		}
+	}
+	user := demoSystemUser(CreateSystemUserRequest{Name: "Demo 用户", Account: id, Status: status})
+	s.systemDemo.overview.Users = append([]SystemUserAdmin{user}, s.systemDemo.overview.Users...)
+	return user
+}
+
+func (s *Service) createDemoSystemRole(req CreateSystemRoleRequest) SystemRoleAdmin {
+	if s.systemDemo == nil {
+		s.systemDemo = newSystemDemoState()
+	}
+	s.systemDemo.mu.Lock()
+	defer s.systemDemo.mu.Unlock()
+	role := demoSystemRole(req)
+	s.systemDemo.overview.Roles = append([]SystemRoleAdmin{role}, s.systemDemo.overview.Roles...)
+	return role
+}
+
+func (s *Service) updateDemoSystemRoleEnabled(id string, enabled bool) SystemRoleAdmin {
+	if s.systemDemo == nil {
+		s.systemDemo = newSystemDemoState()
+	}
+	s.systemDemo.mu.Lock()
+	defer s.systemDemo.mu.Unlock()
+	for index, role := range s.systemDemo.overview.Roles {
+		if role.ID == id {
+			s.systemDemo.overview.Roles[index].Enabled = enabled
+			return s.systemDemo.overview.Roles[index]
+		}
+	}
+	role := demoSystemRole(CreateSystemRoleRequest{Name: "Demo 角色", Code: id, Enabled: &enabled})
+	s.systemDemo.overview.Roles = append([]SystemRoleAdmin{role}, s.systemDemo.overview.Roles...)
+	return role
+}
+
+func (s *Service) createDemoSystemPermission(req CreateSystemPermissionRequest) SystemPermissionAdmin {
+	if s.systemDemo == nil {
+		s.systemDemo = newSystemDemoState()
+	}
+	s.systemDemo.mu.Lock()
+	defer s.systemDemo.mu.Unlock()
+	permission := demoSystemPermission(req)
+	s.systemDemo.overview.Permissions = append([]SystemPermissionAdmin{permission}, s.systemDemo.overview.Permissions...)
+	return permission
+}
+
+func (s *Service) updateDemoSystemPermissionEnabled(id string, enabled bool) SystemPermissionAdmin {
+	if s.systemDemo == nil {
+		s.systemDemo = newSystemDemoState()
+	}
+	s.systemDemo.mu.Lock()
+	defer s.systemDemo.mu.Unlock()
+	for index, permission := range s.systemDemo.overview.Permissions {
+		if permission.ID == id {
+			s.systemDemo.overview.Permissions[index].Enabled = enabled
+			return s.systemDemo.overview.Permissions[index]
+		}
+	}
+	permission := demoSystemPermission(CreateSystemPermissionRequest{Name: "Demo 权限", Code: id, Enabled: &enabled})
+	s.systemDemo.overview.Permissions = append([]SystemPermissionAdmin{permission}, s.systemDemo.overview.Permissions...)
+	return permission
+}
+
+func (s *Service) createDemoSystemDictionary(req CreateSystemDictionaryRequest) SystemDictionaryAdmin {
+	if s.systemDemo == nil {
+		s.systemDemo = newSystemDemoState()
+	}
+	s.systemDemo.mu.Lock()
+	defer s.systemDemo.mu.Unlock()
+	dictionary := demoSystemDictionary(req)
+	s.systemDemo.overview.Dictionaries = append([]SystemDictionaryAdmin{dictionary}, s.systemDemo.overview.Dictionaries...)
+	return dictionary
+}
+
+func (s *Service) updateDemoSystemDictionaryEnabled(id string, enabled bool) SystemDictionaryAdmin {
+	if s.systemDemo == nil {
+		s.systemDemo = newSystemDemoState()
+	}
+	s.systemDemo.mu.Lock()
+	defer s.systemDemo.mu.Unlock()
+	for index, dictionary := range s.systemDemo.overview.Dictionaries {
+		if dictionary.ID == id {
+			s.systemDemo.overview.Dictionaries[index].Enabled = enabled
+			return s.systemDemo.overview.Dictionaries[index]
+		}
+	}
+	dictionary := demoSystemDictionary(CreateSystemDictionaryRequest{Group: "demo", Key: id, Label: "Demo 字典", Enabled: &enabled})
+	s.systemDemo.overview.Dictionaries = append([]SystemDictionaryAdmin{dictionary}, s.systemDemo.overview.Dictionaries...)
+	return dictionary
+}
+
+func (s *Service) createDemoSystemMenu(req CreateSystemMenuRequest) SystemMenuAdmin {
+	if s.systemDemo == nil {
+		s.systemDemo = newSystemDemoState()
+	}
+	s.systemDemo.mu.Lock()
+	defer s.systemDemo.mu.Unlock()
+	menu := demoSystemMenu(req)
+	s.systemDemo.overview.Menus = append([]SystemMenuAdmin{menu}, s.systemDemo.overview.Menus...)
+	return menu
+}
+
+func (s *Service) updateDemoSystemMenuVisible(id string, visible bool) SystemMenuAdmin {
+	if s.systemDemo == nil {
+		s.systemDemo = newSystemDemoState()
+	}
+	s.systemDemo.mu.Lock()
+	defer s.systemDemo.mu.Unlock()
+	for index, menu := range s.systemDemo.overview.Menus {
+		if menu.ID == id {
+			s.systemDemo.overview.Menus[index].Visible = visible
+			return s.systemDemo.overview.Menus[index]
+		}
+	}
+	menu := demoSystemMenu(CreateSystemMenuRequest{Title: "Demo 菜单", Path: "/" + safeCode(id), Visible: &visible})
+	s.systemDemo.overview.Menus = append([]SystemMenuAdmin{menu}, s.systemDemo.overview.Menus...)
+	return menu
+}
+
+func cloneSystemOverview(overview SystemManagementOverview) SystemManagementOverview {
+	overview.Users = append([]SystemUserAdmin(nil), overview.Users...)
+	overview.Roles = append([]SystemRoleAdmin(nil), overview.Roles...)
+	overview.Permissions = append([]SystemPermissionAdmin(nil), overview.Permissions...)
+	overview.Dictionaries = append([]SystemDictionaryAdmin(nil), overview.Dictionaries...)
+	overview.Menus = append([]SystemMenuAdmin(nil), overview.Menus...)
+	for index, role := range overview.Roles {
+		overview.Roles[index].Permissions = append([]string(nil), role.Permissions...)
+	}
+	return overview
 }
 
 func demoSystemManagementOverview() SystemManagementOverview {

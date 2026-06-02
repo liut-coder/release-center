@@ -1,4 +1,4 @@
-import { useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   BookOpen,
@@ -47,10 +47,19 @@ import { cn } from "@/lib/cn";
 
 type AdminPageKey = "dashboard" | "release-center" | "users" | "roles" | "permissions" | "dictionaries" | "menus";
 
-const navigation: Array<{
+type NavigationGroup = {
   group: string;
   items: Array<{ key: AdminPageKey; label: string; icon: typeof Home }>;
-}> = [
+};
+
+type DashboardQuickEntry = {
+  label: string;
+  value: string;
+  page: AdminPageKey;
+  icon: typeof Home;
+};
+
+const navigation: NavigationGroup[] = [
   {
     group: "工作台",
     items: [
@@ -69,6 +78,30 @@ const navigation: Array<{
     ],
   },
 ];
+
+const iconRegistry: Record<string, typeof Home> = {
+  Database,
+  Home,
+  KeyRound,
+  LayoutDashboard,
+  ListTree,
+  Rocket,
+  Shield,
+  SlidersHorizontal,
+  Users,
+};
+
+const pagePathMap: Record<string, AdminPageKey> = {
+  "/dashboard": "dashboard",
+  "/release-center": "release-center",
+  "/system/users": "users",
+  "/system/roles": "roles",
+  "/system/permissions": "permissions",
+  "/system/dictionaries": "dictionaries",
+  "/system/menus": "menus",
+};
+
+const fallbackPageMeta = new Map(navigation.flatMap((group) => group.items.map((item) => [item.key, item])));
 
 const SYSTEM_MANAGEMENT_QUERY_KEY = ["system-management"] as const;
 
@@ -97,6 +130,8 @@ type SystemManagementActions = {
 
 type SystemPageRenderContext = {
   system: SystemManagementOverview;
+  navigation: NavigationGroup[];
+  visiblePages: Set<AdminPageKey>;
   loading: boolean;
   error: unknown;
   actions: SystemManagementActions;
@@ -117,13 +152,19 @@ export function App() {
     enabled: session.signedIn,
   });
   const systemActions = useSystemManagementActions();
+  const system = systemQuery.data ?? emptySystemManagement;
+  const pageNavigation = useMemo(() => buildNavigationFromMenus(system.menus), [system.menus]);
+  const visiblePages = useMemo(() => new Set(pageNavigation.flatMap((group) => group.items.map((item) => item.key))), [pageNavigation]);
+  const currentLabel = pageNavigation.flatMap((group) => group.items).find((item) => item.key === activePage)?.label ?? fallbackPageMeta.get(activePage)?.label ?? "首页";
+
+  useEffect(() => {
+    if (!session.signedIn || visiblePages.size === 0 || visiblePages.has(activePage)) return;
+    setActivePage(visiblePages.values().next().value ?? "dashboard");
+  }, [activePage, session.signedIn, visiblePages]);
 
   if (!session.signedIn) {
     return <LoginPage onLogin={(token, name) => setSession({ signedIn: true, token, name })} />;
   }
-
-  const currentLabel = navigation.flatMap((group) => group.items).find((item) => item.key === activePage)?.label ?? "首页";
-  const system = systemQuery.data ?? emptySystemManagement;
 
   return (
     <main className="admin-shell min-h-screen bg-muted/30">
@@ -144,7 +185,7 @@ export function App() {
             </div>
           </div>
           <nav className="space-y-5 px-3 py-4">
-            {navigation.map((group) => (
+            {pageNavigation.map((group) => (
               <div key={group.group}>
                 <div className="px-2 pb-2 text-[11px] font-medium text-muted-foreground">{group.group}</div>
                 <div className="space-y-1">
@@ -198,6 +239,8 @@ export function App() {
           <div className="admin-content mx-auto max-w-[1600px] px-4 py-4 sm:px-6 lg:px-8">
             {renderPage(activePage, setActivePage, {
               system,
+              navigation: pageNavigation,
+              visiblePages,
               loading: systemQuery.isLoading,
               error: systemQuery.error,
               actions: systemActions,
@@ -347,6 +390,27 @@ function NavButton({ active, icon: Icon, label, onClick }: { active: boolean; ic
   );
 }
 
+function buildNavigationFromMenus(menus: SystemMenu[]): NavigationGroup[] {
+  const visibleMenus = menus.filter((menu) => menu.visible && pagePathMap[menu.path]).sort((left, right) => left.sort - right.sort || left.title.localeCompare(right.title));
+  if (visibleMenus.length === 0) return navigation;
+
+  const groups = new Map<string, NavigationGroup>();
+  for (const menu of visibleMenus) {
+    const key = pagePathMap[menu.path];
+    const fallback = fallbackPageMeta.get(key);
+    const groupName = menu.parent || (key === "dashboard" || key === "release-center" ? "工作台" : "系统管理");
+    const group = groups.get(groupName) ?? { group: groupName, items: [] };
+    group.items.push({
+      key,
+      label: menu.title || fallback?.label || key,
+      icon: iconRegistry[menu.icon] ?? fallback?.icon ?? Home,
+    });
+    groups.set(groupName, group);
+  }
+
+  return Array.from(groups.values()).filter((group) => group.items.length > 0);
+}
+
 function renderPage(activePage: AdminPageKey, setActivePage: (page: AdminPageKey) => void, context: SystemPageRenderContext) {
   if (activePage === "release-center") return <AppReleasesPage />;
   if (activePage === "users") return <UsersPage users={context.system.users} loading={context.loading} error={context.error} actions={context.actions} />;
@@ -358,18 +422,34 @@ function renderPage(activePage: AdminPageKey, setActivePage: (page: AdminPageKey
     return <DictionariesPage dictionaries={context.system.dictionaries} loading={context.loading} error={context.error} actions={context.actions} />;
   }
   if (activePage === "menus") return <MenusPage menus={context.system.menus} loading={context.loading} error={context.error} actions={context.actions} />;
-  return <DashboardPage system={context.system} loading={context.loading} error={context.error} onOpen={setActivePage} />;
+  return <DashboardPage system={context.system} navigation={context.navigation} visiblePages={context.visiblePages} loading={context.loading} error={context.error} onOpen={setActivePage} />;
 }
 
-function DashboardPage({ system, loading, error, onOpen }: { system: SystemManagementOverview; loading: boolean; error: unknown; onOpen: (page: AdminPageKey) => void }) {
-  const quickEntries: Array<{ label: string; value: string; page: AdminPageKey; icon: typeof Home }> = [
+function DashboardPage({
+  system,
+  navigation: pageNavigation,
+  visiblePages,
+  loading,
+  error,
+  onOpen,
+}: {
+  system: SystemManagementOverview;
+  navigation: NavigationGroup[];
+  visiblePages: Set<AdminPageKey>;
+  loading: boolean;
+  error: unknown;
+  onOpen: (page: AdminPageKey) => void;
+}) {
+  const quickEntryCandidates: DashboardQuickEntry[] = [
     { label: "用户", value: loading ? "-" : String(system.users.length), page: "users", icon: Users },
     { label: "角色", value: loading ? "-" : String(system.roles.length), page: "roles", icon: Shield },
     { label: "权限点", value: loading ? "-" : String(system.permissions.length), page: "permissions", icon: KeyRound },
     { label: "字典项", value: loading ? "-" : String(system.dictionaries.length), page: "dictionaries", icon: Database },
   ];
+  const quickEntries = quickEntryCandidates.filter((item) => visiblePages.has(item.page));
   const recentUsers = system.users.slice(0, 3);
-  const menuCount = system.menus.length || navigation.flatMap((group) => group.items).length;
+  const visibleNavigationItems = pageNavigation.flatMap((group) => group.items);
+  const menuCount = visibleNavigationItems.length;
 
   return (
     <div className="grid gap-4">
@@ -392,7 +472,7 @@ function DashboardPage({ system, loading, error, onOpen }: { system: SystemManag
             <Badge>{menuCount} 个菜单</Badge>
           </div>
           <div className="grid gap-2 md:grid-cols-2">
-            {navigation.flatMap((group) => group.items).map((item) => (
+            {visibleNavigationItems.map((item) => (
               <button key={item.key} className="flex items-center gap-3 rounded-lg border p-3 text-left hover:border-black" onClick={() => onOpen(item.key)}>
                 <item.icon className="h-4 w-4" />
                 <div className="min-w-0">
