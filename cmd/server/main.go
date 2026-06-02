@@ -95,9 +95,11 @@ func main() {
 		}
 		w.WriteHeader(http.StatusNoContent)
 	})
+	adminAccounts := adminTokenAccounts(env("ADMIN_TOKEN", ""), env("ADMIN_TOKEN_ACCOUNTS", ""))
 	r.Mount("/", handler.RoutesWithOptions(appreleases.RouteOptions{
-		AdminMiddleware: tokenMiddlewares(env("ADMIN_TOKEN", "")),
-		CIMiddleware:    tokenMiddlewares(env("CI_TOKEN", env("GAME_HELPER_CI_TOKEN", ""))),
+		AdminMiddleware:           tokenAccountMiddlewares(adminAccounts),
+		AdminPermissionMiddleware: appreleases.AdminRBACMiddleware(service, adminAccounts),
+		CIMiddleware:              tokenMiddlewares(env("CI_TOKEN", env("GAME_HELPER_CI_TOKEN", ""))),
 	}))
 	mountWeb(r, logger, env("WEB_DIST", "web/dist"))
 
@@ -145,6 +147,37 @@ func tokenMiddlewares(token string) []func(http.Handler) http.Handler {
 		return nil
 	}
 	return []func(http.Handler) http.Handler{appreleases.BearerTokenMiddleware(token)}
+}
+
+func tokenAccountMiddlewares(accounts map[string]string) []func(http.Handler) http.Handler {
+	if len(accounts) == 0 {
+		return nil
+	}
+	tokens := make([]string, 0, len(accounts))
+	for token := range accounts {
+		tokens = append(tokens, token)
+	}
+	return []func(http.Handler) http.Handler{appreleases.BearerTokenMiddleware(tokens...)}
+}
+
+func adminTokenAccounts(adminToken, mappings string) map[string]string {
+	result := map[string]string{}
+	if strings.TrimSpace(adminToken) != "" {
+		result[strings.TrimSpace(adminToken)] = "system.admin"
+	}
+	for _, item := range strings.Split(mappings, ",") {
+		token, account, ok := strings.Cut(item, ":")
+		if !ok {
+			continue
+		}
+		token = strings.TrimSpace(token)
+		account = strings.TrimSpace(account)
+		if token == "" || account == "" {
+			continue
+		}
+		result[token] = account
+	}
+	return result
 }
 
 func env(key, fallback string) string {

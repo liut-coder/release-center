@@ -45,6 +45,10 @@ type SystemManagementStore interface {
 	UpdateSystemMenuVisible(ctx context.Context, id string, visible bool) (SystemMenuAdmin, error)
 }
 
+type SystemPermissionStore interface {
+	AdminRolePermissions(ctx context.Context, account string) ([]string, bool, error)
+}
+
 type ResourceCandidate struct {
 	ResourceVersion      string
 	Channel              string

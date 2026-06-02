@@ -2,8 +2,10 @@ package appreleases
 
 import (
 	"context"
+	"errors"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 )
 
 func (s *PostgresStore) SystemManagementOverview(ctx context.Context) (SystemManagementOverview, error) {
@@ -34,6 +36,26 @@ func (s *PostgresStore) SystemManagementOverview(ctx context.Context) (SystemMan
 		Dictionaries: dictionaries,
 		Menus:        menus,
 	}, nil
+}
+
+func (s *PostgresStore) AdminRolePermissions(ctx context.Context, account string) ([]string, bool, error) {
+	var permissions []string
+	var userEnabled bool
+	var roleEnabled bool
+	err := s.db.QueryRow(ctx, `
+		select r.permissions, u.status = 'enabled', r.enabled
+		from system_users u
+		join system_roles r on r.tenant_id = u.tenant_id and r.code = u.role_code
+		where u.tenant_id = 'default' and u.account = $1
+		limit 1
+	`, account).Scan(&permissions, &userEnabled, &roleEnabled)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, false, nil
+		}
+		return nil, false, err
+	}
+	return permissions, userEnabled && roleEnabled, nil
 }
 
 func (s *PostgresStore) CreateSystemUser(ctx context.Context, req CreateSystemUserRequest) (SystemUserAdmin, error) {

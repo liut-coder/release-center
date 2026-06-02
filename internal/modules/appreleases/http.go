@@ -169,6 +169,9 @@ func (h *Handler) SystemManagementOverview(w http.ResponseWriter, r *http.Reques
 		httpx.Error(w, r, http.StatusInternalServerError, "system.overview_failed", "读取系统管理数据失败", map[string]any{"error": err.Error()})
 		return
 	}
+	if account := AdminAccountFromContext(r.Context()); account != "" {
+		resp = h.service.FilterSystemManagementOverview(r.Context(), resp, account)
+	}
 	httpx.JSON(w, http.StatusOK, resp)
 }
 

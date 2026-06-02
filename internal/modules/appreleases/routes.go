@@ -8,10 +8,11 @@ import (
 )
 
 type RouteOptions struct {
-	AdminMiddleware   []func(http.Handler) http.Handler
-	CIMiddleware      []func(http.Handler) http.Handler
-	WebhookMiddleware []func(http.Handler) http.Handler
-	ClientMiddleware  []func(http.Handler) http.Handler
+	AdminMiddleware           []func(http.Handler) http.Handler
+	AdminPermissionMiddleware func(permission string) func(http.Handler) http.Handler
+	CIMiddleware              []func(http.Handler) http.Handler
+	WebhookMiddleware         []func(http.Handler) http.Handler
+	ClientMiddleware          []func(http.Handler) http.Handler
 }
 
 func (h *Handler) Routes() chi.Router {
@@ -23,63 +24,63 @@ func (h *Handler) RoutesWithOptions(opts RouteOptions) chi.Router {
 
 	r.Group(func(r chi.Router) {
 		useAll(r, opts.AdminMiddleware)
-		r.Get("/admin/api/app-releases", h.AdminOverview)
-		r.Get("/admin/api/apps", h.AdminOverview)
-		r.Get("/admin/api/builds", h.AdminOverview)
-		r.Get("/admin/api/artifacts", h.AdminOverview)
-		r.Get("/admin/api/audit-logs", h.AdminOverview)
-		r.Post("/admin/api/apps", h.CreateApp)
-		r.Post("/admin/api/apps/{app_id}/enable", h.AppAction("enable"))
-		r.Post("/admin/api/apps/{app_id}/disable", h.AppAction("disable"))
+		r.With(adminPermission(opts, "release:read")).Get("/admin/api/app-releases", h.AdminOverview)
+		r.With(adminPermission(opts, "release:read")).Get("/admin/api/apps", h.AdminOverview)
+		r.With(adminPermission(opts, "release:read")).Get("/admin/api/builds", h.AdminOverview)
+		r.With(adminPermission(opts, "release:read")).Get("/admin/api/artifacts", h.AdminOverview)
+		r.With(adminPermission(opts, "release:audit")).Get("/admin/api/audit-logs", h.AdminOverview)
+		r.With(adminPermission(opts, "release:write")).Post("/admin/api/apps", h.CreateApp)
+		r.With(adminPermission(opts, "release:write")).Post("/admin/api/apps/{app_id}/enable", h.AppAction("enable"))
+		r.With(adminPermission(opts, "release:write")).Post("/admin/api/apps/{app_id}/disable", h.AppAction("disable"))
 
-		r.Get("/admin/api/system/overview", h.SystemManagementOverview)
-		r.Get("/admin/api/system/users", h.SystemManagementOverview)
-		r.Post("/admin/api/system/users", h.CreateSystemUser)
-		r.Post("/admin/api/system/users/{user_id}/enable", h.SystemUserAction("enable"))
-		r.Post("/admin/api/system/users/{user_id}/disable", h.SystemUserAction("disable"))
-		r.Get("/admin/api/system/roles", h.SystemManagementOverview)
-		r.Post("/admin/api/system/roles", h.CreateSystemRole)
-		r.Post("/admin/api/system/roles/{role_id}/enable", h.SystemRoleAction("enable"))
-		r.Post("/admin/api/system/roles/{role_id}/disable", h.SystemRoleAction("disable"))
-		r.Get("/admin/api/system/permissions", h.SystemManagementOverview)
-		r.Post("/admin/api/system/permissions", h.CreateSystemPermission)
-		r.Post("/admin/api/system/permissions/{permission_id}/enable", h.SystemPermissionAction("enable"))
-		r.Post("/admin/api/system/permissions/{permission_id}/disable", h.SystemPermissionAction("disable"))
-		r.Get("/admin/api/system/dictionaries", h.SystemManagementOverview)
-		r.Post("/admin/api/system/dictionaries", h.CreateSystemDictionary)
-		r.Post("/admin/api/system/dictionaries/{dictionary_id}/enable", h.SystemDictionaryAction("enable"))
-		r.Post("/admin/api/system/dictionaries/{dictionary_id}/disable", h.SystemDictionaryAction("disable"))
-		r.Get("/admin/api/system/menus", h.SystemManagementOverview)
-		r.Post("/admin/api/system/menus", h.CreateSystemMenu)
-		r.Post("/admin/api/system/menus/{menu_id}/show", h.SystemMenuAction("show"))
-		r.Post("/admin/api/system/menus/{menu_id}/hide", h.SystemMenuAction("hide"))
+		r.With(adminPermission(opts, "admin:access")).Get("/admin/api/system/overview", h.SystemManagementOverview)
+		r.With(adminPermission(opts, "system:read")).Get("/admin/api/system/users", h.SystemManagementOverview)
+		r.With(adminPermission(opts, "system:write")).Post("/admin/api/system/users", h.CreateSystemUser)
+		r.With(adminPermission(opts, "system:write")).Post("/admin/api/system/users/{user_id}/enable", h.SystemUserAction("enable"))
+		r.With(adminPermission(opts, "system:write")).Post("/admin/api/system/users/{user_id}/disable", h.SystemUserAction("disable"))
+		r.With(adminPermission(opts, "system:read")).Get("/admin/api/system/roles", h.SystemManagementOverview)
+		r.With(adminPermission(opts, "system:write")).Post("/admin/api/system/roles", h.CreateSystemRole)
+		r.With(adminPermission(opts, "system:write")).Post("/admin/api/system/roles/{role_id}/enable", h.SystemRoleAction("enable"))
+		r.With(adminPermission(opts, "system:write")).Post("/admin/api/system/roles/{role_id}/disable", h.SystemRoleAction("disable"))
+		r.With(adminPermission(opts, "system:read")).Get("/admin/api/system/permissions", h.SystemManagementOverview)
+		r.With(adminPermission(opts, "system:write")).Post("/admin/api/system/permissions", h.CreateSystemPermission)
+		r.With(adminPermission(opts, "system:write")).Post("/admin/api/system/permissions/{permission_id}/enable", h.SystemPermissionAction("enable"))
+		r.With(adminPermission(opts, "system:write")).Post("/admin/api/system/permissions/{permission_id}/disable", h.SystemPermissionAction("disable"))
+		r.With(adminPermission(opts, "system:read")).Get("/admin/api/system/dictionaries", h.SystemManagementOverview)
+		r.With(adminPermission(opts, "system:write")).Post("/admin/api/system/dictionaries", h.CreateSystemDictionary)
+		r.With(adminPermission(opts, "system:write")).Post("/admin/api/system/dictionaries/{dictionary_id}/enable", h.SystemDictionaryAction("enable"))
+		r.With(adminPermission(opts, "system:write")).Post("/admin/api/system/dictionaries/{dictionary_id}/disable", h.SystemDictionaryAction("disable"))
+		r.With(adminPermission(opts, "system:read")).Get("/admin/api/system/menus", h.SystemManagementOverview)
+		r.With(adminPermission(opts, "system:write")).Post("/admin/api/system/menus", h.CreateSystemMenu)
+		r.With(adminPermission(opts, "system:write")).Post("/admin/api/system/menus/{menu_id}/show", h.SystemMenuAction("show"))
+		r.With(adminPermission(opts, "system:write")).Post("/admin/api/system/menus/{menu_id}/hide", h.SystemMenuAction("hide"))
 
-		r.Post("/admin/api/app-releases/build", h.CreateBuild)
-		r.Post("/admin/api/app-releases", h.CreateRelease)
-		r.Get("/admin/api/app-releases/builds/{job_id}", h.GetBuildJob)
-		r.Get("/admin/api/app-releases/builds/{job_id}/logs", h.GetBuildLogs)
-		r.Get("/admin/api/app-releases/builds/{build_id}/download", h.DownloadBuild)
-		r.Get("/admin/api/app-releases/{release_id}/download", h.DownloadRelease)
-		r.Post("/admin/api/app-releases/{release_id}/publish", h.ReleaseAction("publish"))
-		r.Post("/admin/api/app-releases/{release_id}/pause", h.ReleaseAction("pause"))
-		r.Post("/admin/api/app-releases/{release_id}/recall", h.ReleaseAction("recall"))
-		r.Post("/admin/api/app-releases/{release_id}/unpublish", h.ReleaseAction("unpublish"))
-		r.Post("/admin/api/app-releases/{release_id}/rollback", h.ReleaseAction("rollback"))
-		r.Post("/admin/api/app-releases/{release_id}/rollout", h.UpdateReleaseRollout)
-		r.Post("/admin/api/app-releases/{release_id}/notes", h.UpdateReleaseNotes)
+		r.With(adminPermission(opts, "release:write")).Post("/admin/api/app-releases/build", h.CreateBuild)
+		r.With(adminPermission(opts, "release:write")).Post("/admin/api/app-releases", h.CreateRelease)
+		r.With(adminPermission(opts, "release:read")).Get("/admin/api/app-releases/builds/{job_id}", h.GetBuildJob)
+		r.With(adminPermission(opts, "release:read")).Get("/admin/api/app-releases/builds/{job_id}/logs", h.GetBuildLogs)
+		r.With(adminPermission(opts, "release:read")).Get("/admin/api/app-releases/builds/{build_id}/download", h.DownloadBuild)
+		r.With(adminPermission(opts, "release:read")).Get("/admin/api/app-releases/{release_id}/download", h.DownloadRelease)
+		r.With(adminPermission(opts, "release:write")).Post("/admin/api/app-releases/{release_id}/publish", h.ReleaseAction("publish"))
+		r.With(adminPermission(opts, "release:write")).Post("/admin/api/app-releases/{release_id}/pause", h.ReleaseAction("pause"))
+		r.With(adminPermission(opts, "release:write")).Post("/admin/api/app-releases/{release_id}/recall", h.ReleaseAction("recall"))
+		r.With(adminPermission(opts, "release:write")).Post("/admin/api/app-releases/{release_id}/unpublish", h.ReleaseAction("unpublish"))
+		r.With(adminPermission(opts, "release:write")).Post("/admin/api/app-releases/{release_id}/rollback", h.ReleaseAction("rollback"))
+		r.With(adminPermission(opts, "release:write")).Post("/admin/api/app-releases/{release_id}/rollout", h.UpdateReleaseRollout)
+		r.With(adminPermission(opts, "release:write")).Post("/admin/api/app-releases/{release_id}/notes", h.UpdateReleaseNotes)
 
-		r.Post("/admin/api/releases", h.CreateRelease)
-		r.Post("/admin/api/releases/{release_id}/publish", h.ReleaseAction("publish"))
-		r.Post("/admin/api/releases/{release_id}/pause", h.ReleaseAction("pause"))
-		r.Post("/admin/api/releases/{release_id}/rollback", h.ReleaseAction("rollback"))
+		r.With(adminPermission(opts, "release:write")).Post("/admin/api/releases", h.CreateRelease)
+		r.With(adminPermission(opts, "release:write")).Post("/admin/api/releases/{release_id}/publish", h.ReleaseAction("publish"))
+		r.With(adminPermission(opts, "release:write")).Post("/admin/api/releases/{release_id}/pause", h.ReleaseAction("pause"))
+		r.With(adminPermission(opts, "release:write")).Post("/admin/api/releases/{release_id}/rollback", h.ReleaseAction("rollback"))
 
-		r.Post("/admin/api/app-resources", h.CreateResourceVersion)
-		r.Post("/admin/api/app-resources/{resource_id}/publish", h.ResourceAction("publish"))
-		r.Post("/admin/api/app-resources/{resource_id}/pause", h.ResourceAction("pause"))
-		r.Post("/admin/api/app-resources/{resource_id}/recall", h.ResourceAction("recall"))
-		r.Post("/admin/api/app-resources/{resource_id}/rollback", h.ResourceAction("rollback"))
-		r.Post("/admin/api/app-resources/{resource_id}/rollout", h.UpdateResourceRollout)
-		r.Post("/admin/api/app-resources/{resource_id}/notes", h.UpdateResourceNotes)
+		r.With(adminPermission(opts, "release:write")).Post("/admin/api/app-resources", h.CreateResourceVersion)
+		r.With(adminPermission(opts, "release:write")).Post("/admin/api/app-resources/{resource_id}/publish", h.ResourceAction("publish"))
+		r.With(adminPermission(opts, "release:write")).Post("/admin/api/app-resources/{resource_id}/pause", h.ResourceAction("pause"))
+		r.With(adminPermission(opts, "release:write")).Post("/admin/api/app-resources/{resource_id}/recall", h.ResourceAction("recall"))
+		r.With(adminPermission(opts, "release:write")).Post("/admin/api/app-resources/{resource_id}/rollback", h.ResourceAction("rollback"))
+		r.With(adminPermission(opts, "release:write")).Post("/admin/api/app-resources/{resource_id}/rollout", h.UpdateResourceRollout)
+		r.With(adminPermission(opts, "release:write")).Post("/admin/api/app-resources/{resource_id}/notes", h.UpdateResourceNotes)
 	})
 
 	r.Group(func(r chi.Router) {
@@ -118,6 +119,13 @@ func (h *Handler) RoutesWithOptions(opts RouteOptions) chi.Router {
 	})
 
 	return r
+}
+
+func adminPermission(opts RouteOptions, permission string) func(http.Handler) http.Handler {
+	if opts.AdminPermissionMiddleware == nil {
+		return func(next http.Handler) http.Handler { return next }
+	}
+	return opts.AdminPermissionMiddleware(permission)
 }
 
 func useAll(r chi.Router, middlewares []func(http.Handler) http.Handler) {

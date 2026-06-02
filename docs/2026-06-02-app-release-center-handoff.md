@@ -30,6 +30,7 @@
 - Go server 已托管 `WEB_DIST=web/dist`，`GET /` 返回后台页面，`/api/*` 和 `/admin/api/*` 保持 API 行为。
 - 系统管理已新增用户、角色、权限、数据字典、菜单 PostgreSQL migration、Admin API 和前端 API 客户端。
 - 后台系统管理页面已从前端本地示例状态切换到后端 overview/create/enable/disable/show/hide 接口，操作后通过 React Query 刷新；菜单 visible 状态已驱动侧栏导航和首页模块入口。
+- 后台 Admin API 已接入服务端 RBAC permission middleware，按用户账号、角色权限和路由权限码拦截；系统 overview 会按当前账号过滤菜单和系统管理数据。
 - App 发版中心构建表单的 `apiBaseUrl` 已改为优先读取 `VITE_API_BASE_URL`，未配置时使用当前页面 origin，避免本地或生产同源部署时默认写入旧公网 IP。
 - 本机 PostgreSQL 临时 schema 已完成真实 DB smoke，覆盖迁移、APK URL 登记、发布、update-check、资源上传发布、resource-check、activation_failed 自动暂停和审计。
 
@@ -40,7 +41,7 @@
 | 方向 | 当前状态 | 仍需外部确认 |
 |---|---|---|
 | 后端闭环 | App / build / release / resource / event / heartbeat / preflight / audit API 已落地 | 生产 18080 使用真实 `DATABASE_URL` 执行迁移并重启 |
-| 前端闭环 | `web/` 管理台已具备登录、首页、系统管理页面、用户/角色/权限/数据字典/菜单后端数据接入、菜单驱动导航和 App 发版中心业务模块 | RBAC 权限拦截和生产静态资源浏览器 smoke |
+| 前端闭环 | `web/` 管理台已具备登录、首页、系统管理页面、用户/角色/权限/数据字典/菜单后端数据接入、菜单/RBAC 过滤结果驱动导航和 App 发版中心业务模块 | 生产静态资源浏览器 smoke |
 | CLI / CI | `releasectl` 覆盖 APK URL/文件登记、资源打包上传、公钥导出、Manifest 验签；workflow 覆盖基础 smoke | 受保护 CI 环境配置真实 token 后跑发布链路 |
 | APK 更新 | 发布、灰度、下载、update-check、SHA-256 信息输出已闭环 | Android 真机下载安装、校验和系统安装器 smoke |
 | 资源增量 | 白名单、ZIP 校验、Manifest、下载、resource-check、自动暂停已闭环 | Android 真机下载、Ed25519 验签、解压激活、失败回滚 smoke |
@@ -70,7 +71,7 @@
 | GitHub/Gitea Webhook 记录 | `Handler.Webhook(provider)`、`SaveWebhookEvent` | 已有 |
 | GitHub/Gitea Actions 上传制品 | `/api/v1/ci/artifacts` + `releasectl artifact-upload` + `CIMiddleware` | 已验证 |
 
-当前目录已包含 `appreleases` 标准路由注册、迁移、服务端 main、Go module、Makefile、CI workflow 和独立后台 Web。后台 Web 已具备基础管理台壳，系统管理页面已接入后端数据；用户、角色、权限、数据字典、菜单已有表结构和 API，后续需要在真实 PostgreSQL 环境验收持久化读写，并把 RBAC 权限拦截接入后台路由。发版闭环已在本机 PostgreSQL 临时 schema 验证；生产 18080 仍需用真实 APK、真实资源包和 Android 客户端做真机 smoke。
+当前目录已包含 `appreleases` 标准路由注册、迁移、服务端 main、Go module、Makefile、CI workflow 和独立后台 Web。后台 Web 已具备基础管理台壳，系统管理页面已接入后端数据；用户、角色、权限、数据字典、菜单已有表结构和 API，Admin API 已按 `release:*`、`system:*` 等权限码接入 RBAC 拦截。后续需要在真实 PostgreSQL 环境验收持久化读写、生产账号映射和浏览器 smoke。发版闭环已在本机 PostgreSQL 临时 schema 验证；生产 18080 仍需用真实 APK、真实资源包和 Android 客户端做真机 smoke。
 
 CI Token 推荐在完整服务端挂载时接入：
 
@@ -82,7 +83,14 @@ r.Mount("/", handler.RoutesWithOptions(appreleases.RouteOptions{
 }))
 ```
 
-后台登录鉴权和 Webhook 签名校验可分别通过 `AdminMiddleware`、`WebhookMiddleware` 接入，避免在发布中心模块里绑定具体认证系统。
+后台 Admin API 当前通过 `ADMIN_TOKEN` / `ADMIN_TOKEN_ACCOUNTS` 映射到系统账号并执行 RBAC：
+
+```bash
+ADMIN_TOKEN="$GAME_HELPER_ADMIN_TOKEN"                       # 默认映射 system.admin
+ADMIN_TOKEN_ACCOUNTS="token1:system.admin,token2:release.admin"
+```
+
+`system.admin` 属于 `system_admin`，可访问系统管理和发布操作；`release.admin` 属于 `release_admin`，可访问发布中心，但系统管理写接口会返回 403。Webhook 签名校验仍可通过 `WebhookMiddleware` 单独接入，避免和后台 RBAC 混在一起。
 
 ## 2. 关键代码
 
@@ -396,10 +404,14 @@ cd web && npm run build
 
 ```text
 App 构建表单 apiBaseUrl 默认值已改为 VITE_API_BASE_URL 或当前页面 origin
+Admin API RBAC 已接入路由权限码，system overview 会按账号过滤菜单和系统管理数据
 go test ./...
 go build -buildvcs=false ./cmd/server ./cmd/releasectl ./cmd/migrate
 cd web && npm run build
+ADDR=127.0.0.1:18083 ADMIN_TOKEN=admin-token ADMIN_TOKEN_ACCOUNTS='release-token:release.admin' WEB_DIST=web/dist go run -buildvcs=false ./cmd/server
 ```
+
+本地 RBAC server smoke 结果：`release.admin` token 可读取发布中心和初始化后台 overview，overview 只返回首页和发布中心菜单，不返回系统管理菜单和系统管理数据；`release.admin` 写 `/admin/api/system/users` 返回 403；`system.admin` 写 `/admin/api/system/users` 返回 200。
 
 限制：当前环境未安装 Chromium / Playwright / Puppeteer，尚未完成浏览器自动化点击和视觉 smoke；前端结论只覆盖 TypeScript/Vite 构建与后端 API smoke。
 
@@ -411,6 +423,8 @@ internal/modules/appreleases            测试通过
   - 包含 BearerTokenMiddleware 空 token 放行、错误 token 拒绝、正确 token 放行
   - 包含 Routes 客户端 update-check / heartbeat / task-preflight smoke
   - 包含 RoutesWithOptions 对 CI endpoint 的 token 保护 smoke
+  - 包含 RoutesWithOptions 对 Admin API 的 RBAC 拦截，覆盖 release.admin 可读发布、不可写系统管理、system.admin 可写系统管理
+  - 包含 system overview 按账号过滤菜单和系统管理数据，覆盖 release.admin 不展示系统管理菜单
   - 包含安装/资源生命周期事件状态映射
   - 包含 heartbeat snake_case 字段兼容和 deviceId 必填校验
   - 包含 task-preflight 当前版本放行、低于最低支持版本阻断
@@ -443,7 +457,7 @@ P0 用真实 APK 和 Android 客户端跑安装升级、SHA-256 校验和系统�
 P0 用真实资源包和 Android 客户端跑 ZIP 下载、校验、激活、失败回滚 smoke。
 P1 Android 客户端内置 Manifest 公钥并完成真机验签 smoke。
 P1 在真实 PostgreSQL 上验收系统管理用户、角色、权限、数据字典、菜单持久化读写。
-P1 补齐 RBAC 权限拦截：登录身份、角色权限、菜单可见性、Admin API permission middleware。
+P1 在真实 PostgreSQL 和生产 token 映射下验收 RBAC：API 403、菜单裁剪、系统管理数据过滤和审计记录。
 P1 补齐前端浏览器自动化 smoke，覆盖登录、首页、系统管理、App 发版中心表单和菜单显隐。
 P2 将质量告警接入外部通知和自动执行策略。
 ```

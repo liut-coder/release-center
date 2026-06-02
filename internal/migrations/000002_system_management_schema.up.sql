@@ -80,6 +80,7 @@ ON CONFLICT (tenant_id, code) DO NOTHING;
 
 INSERT INTO system_users (id, tenant_id, name, account, role_code, department, status, last_login_at)
 VALUES
+  (gen_random_uuid(), 'default', '系统管理员', 'system.admin', 'system_admin', '平台工程', 'enabled', now()),
   (gen_random_uuid(), 'default', '发布管理员', 'release.admin', 'release_admin', '平台工程', 'enabled', now()),
   (gen_random_uuid(), 'default', '测试负责人', 'qa.lead', 'release_admin', '质量保障', 'enabled', now() - interval '1 day'),
   (gen_random_uuid(), 'default', '观察员', 'release.viewer', 'release_viewer', '运营支持', 'disabled', now() - interval '5 days')
@@ -88,8 +89,11 @@ ON CONFLICT (tenant_id, account) DO NOTHING;
 INSERT INTO system_permissions (id, tenant_id, name, code, module, permission_type)
 VALUES
   (gen_random_uuid(), 'default', '查看首页', 'dashboard:view', '工作台', 'menu'),
+  (gen_random_uuid(), 'default', '查看发布', 'release:read', '发布中心', 'api'),
   (gen_random_uuid(), 'default', '管理发布', 'release:write', '发布中心', 'button'),
   (gen_random_uuid(), 'default', '查看审计', 'release:audit', '发布中心', 'api'),
+  (gen_random_uuid(), 'default', '查看系统管理', 'system:read', '系统管理', 'api'),
+  (gen_random_uuid(), 'default', '维护系统管理', 'system:write', '系统管理', 'api'),
   (gen_random_uuid(), 'default', '维护用户', 'system:user:write', '系统管理', 'button'),
   (gen_random_uuid(), 'default', '维护菜单', 'system:menu:write', '系统管理', 'button')
 ON CONFLICT (tenant_id, code) DO NOTHING;

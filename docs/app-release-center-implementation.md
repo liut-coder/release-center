@@ -13,12 +13,12 @@
 | 后端 API | App 管理、构建登记、APK 发布、资源发布、灰度、暂停、召回、回滚、下载、事件上报、heartbeat、task-preflight、审计均已落地 |
 | PostgreSQL | 一期 schema migration 覆盖 apps、builds、releases、resource versions、installations、update events、webhook events、audit events；系统管理 migration 覆盖用户、角色、权限、字典和菜单 |
 | CLI / CI | `releasectl` 覆盖 artifact upload、resource pack/upload、Manifest 公钥导出和验签；Makefile 和 GitHub Actions 覆盖 test/build/resource catalog smoke |
-| 后台 Web | `web/` 独立 Vite 管理台已具备登录入口、首页、系统管理页面和 App 发版中心业务模块；用户/角色/权限/数据字典/菜单编辑已从前端本地示例状态切到后端 API 数据，菜单可见性已驱动侧栏导航和首页模块入口 |
+| 后台 Web | `web/` 独立 Vite 管理台已具备登录入口、首页、系统管理页面和 App 发版中心业务模块；用户/角色/权限/数据字典/菜单编辑已从前端本地示例状态切到后端 API 数据，菜单可见性和 RBAC 过滤结果已驱动侧栏导航和首页模块入口 |
 | 资源安全 | 增量资源白名单、ZIP 内容校验、禁止执行代码、SHA-256、文件大小校验和 Manifest Ed25519 签名已落地 |
 | 自动保护 | `activation_failed` 会自动暂停匹配资源版本，写入 `paused_at` 并记录 `resource.auto_pause` 审计 |
 | 质量观察 | overview API 输出 `quality_metrics`、`quality_policy`、`quality_alerts`；Web 统计页展示成功率、失败率、失败原因、阈值、策略建议和质量告警 |
 | 本机验证 | `go test ./...`、`go build -buildvcs=false ./cmd/server ./cmd/releasectl ./cmd/migrate`、`cd web && npm run build` 已通过；系统管理 API 已在 19082 无数据库 Demo fallback 模式 smoke；真实 DB smoke 覆盖迁移、发布、资源发布、检查更新和自动暂停 |
-| 外部待验收 | 生产 18080 migration/重启、系统管理真实 PostgreSQL 环境 smoke、RBAC API 权限拦截、真实 APK Android 安装升级 smoke、真实资源 Android 下载/验签/激活/回滚 smoke 仍需继续推进 |
+| 外部待验收 | 生产 18080 migration/重启、系统管理真实 PostgreSQL 环境 smoke、生产静态资源浏览器 smoke、真实 APK Android 安装升级 smoke、真实资源 Android 下载/验签/激活/回滚 smoke 仍需继续推进 |
 
 ## 当前项目推进与优化点
 
@@ -32,7 +32,8 @@
 - 资源安全闭环：增量资源白名单、ZIP 内容校验、禁止执行代码、SHA-256、文件大小校验、Manifest Ed25519 签名已落地。
 - 发布保护闭环：资源 `activation_failed` 会自动暂停对应资源版本，并写入 `resource.auto_pause` 审计。
 - 观测闭环：overview API 和 Web 统计页已展示 APK/资源成功率、失败率、失败原因、质量阈值、策略建议和质量告警。
-- 系统管理闭环：已新增用户、角色、权限、数据字典、菜单 PostgreSQL 表和 Admin API，前端系统管理页面已接入后端 overview/create/enable/disable/show/hide 接口；菜单 visible 状态驱动侧栏导航和首页模块入口；无数据库时后端提供进程内可变 Demo fallback 便于本地调试。
+- 系统管理闭环：已新增用户、角色、权限、数据字典、菜单 PostgreSQL 表和 Admin API，前端系统管理页面已接入后端 overview/create/enable/disable/show/hide 接口；菜单 visible 状态和服务端 RBAC 过滤结果驱动侧栏导航和首页模块入口；无数据库时后端提供进程内可变 Demo fallback 便于本地调试。
+- 权限闭环：Admin API 已接入服务端 RBAC permission middleware，按 `release:read`、`release:write`、`release:audit`、`system:read`、`system:write` 拦截；`/admin/api/system/overview` 作为后台初始化入口按当前账号过滤菜单和系统管理数据。
 - 前端闭环：`web/` 已形成独立 Vite 管理台，具备登录、首页、系统管理页面和 App 发版中心业务模块。
 - 本地验证闭环：Go test、Go build、Web build 和真实 DB smoke 均已跑通，覆盖迁移、发布、检查更新、资源发布和自动暂停。
 
@@ -47,7 +48,7 @@
 | 资源真机 | Android 客户端 resource-check、Manifest Ed25519 验签、ZIP 下载校验、解压激活、失败回滚 | P0 |
 | CI 真链路 | GitHub/Gitea 受保护环境配置真实 token，执行 artifact-upload 和 resource-upload | P0 |
 | 系统管理 | 生产 PostgreSQL 执行系统管理 migration 后，验证用户/角色/权限/菜单/字典真实持久化读写 | P1 |
-| 权限拦截 | 基于用户、角色、权限点接入后台路由、Admin API、CI API、Webhook API 分组鉴权和操作审计 | P1 |
+| 权限拦截 | 后台 Admin API 已接入用户/角色/权限点拦截；后续补 CI/Webhook 签名细化和真实生产账号验收 | P1 |
 | 静态资源 | 生产 `web/dist` 托管、缓存策略、刷新策略和浏览器 smoke | P1 |
 | 告警通知 | 质量告警接入外部通知渠道，并明确自动执行策略边界 | P2 |
 
@@ -59,7 +60,7 @@
 2. 真实 DB 迁移预案：明确迁移前备份、迁移执行、失败回滚和版本核对步骤。
 3. Android smoke 手册：沉淀 APK 升级、资源激活、验签失败、激活失败自动暂停的真机测试步骤。
 4. 系统管理验收：在真实 PostgreSQL 上执行 `000002_system_management_schema`，验证后台新增、启停、菜单显隐和审计记录。
-5. 认证授权收敛：统一 Admin Token、CI Token、Webhook 签名校验和权限拦截的挂载方式。
+5. 认证授权收敛：已完成 Admin Token 到后台账号的 RBAC 映射，后续继续统一 CI Token、Webhook 签名校验和生产账号管理。
 6. 发布前校验：发布 APK 或资源前检查 SHA-256、文件大小、Manifest 签名、公钥配置、目标渠道和灰度比例。
 7. 操作体验优化：后台增加发布前确认摘要、危险操作二次确认、失败原因聚合和一键复制 smoke 命令。
 8. 文档中心 MVP：整理文档目录、补 front matter、上线静态文档站，并在后台增加只读入口。
@@ -83,7 +84,7 @@
 - Manifest 私钥只允许存在于受保护 CI 或服务端环境，客户端只内置公钥。
 - 已登记制品应保持不可变；重新打包必须产生新的 build、artifact 或 resource version。
 - 质量告警在自动回滚前需要先通过真机和业务规则验证，避免误触发影响正常发布。
-- 系统管理当前已具备管理数据持久化接口，但还没有把用户角色权限真正用于 API 权限拦截；后续不能只做前端隐藏菜单，必须补服务端 RBAC middleware。
+- 系统管理当前已具备管理数据持久化接口和服务端 RBAC 拦截；后续不能只做前端隐藏菜单，生产验收必须同时验证 API 403、菜单裁剪和审计记录。
 
 `appreleases.Handler` 已提供标准路由挂载：
 
@@ -104,6 +105,14 @@ r.Mount("/", handler.RoutesWithOptions(appreleases.RouteOptions{
 ```
 
 `BearerTokenMiddleware` 仅在传入非空 token 时启用；后台登录鉴权、Webhook 签名校验也可以通过 `AdminMiddleware`、`WebhookMiddleware` 分组接入。
+
+后台 Admin API 当前已接入 RBAC：
+
+- `ADMIN_TOKEN` 默认映射到账号 `system.admin`，该账号在系统管理 seed 中属于 `system_admin` 角色。
+- 可通过 `ADMIN_TOKEN_ACCOUNTS` 配置多个 token 和账号映射，格式为 `token1:system.admin,token2:release.admin`。
+- `RoutesWithOptions` 支持 `AdminPermissionMiddleware`，各 Admin API 路由已标记所需权限。
+- PostgreSQL 模式下 RBAC 直接查询当前账号的用户状态、角色状态和角色权限；Demo 模式下读取进程内系统管理状态。
+- `/admin/api/system/overview` 用于后台初始化，要求 `admin:access`，并按当前账号权限过滤菜单和系统管理数据。
 
 当前子树已提供最小服务入口：
 
@@ -133,7 +142,7 @@ cd web && npm run build
 - 系统管理：包含用户管理、角色管理、权限管理、数据字典和菜单编辑页面，新增、启停、显示隐藏操作通过后端 API 执行并刷新 React Query 缓存；菜单 visible 状态会影响侧栏导航和首页模块入口。
 - 业务模块：App 发版中心作为菜单项接入，继续覆盖 App、构建、发布、资源、设备、统计、事件和审计。
 
-系统管理页面已不再依赖前端本地 seed 状态。当前后端提供 `SystemManagementStore`，PostgreSQL 环境读写 `system_users`、`system_roles`、`system_permissions`、`system_dictionaries`、`system_menus`；无数据库 store 时使用进程内 Demo 状态，方便本地调试新增、启停和菜单显隐。系统管理写操作会调用 `InsertAudit` 记录操作审计。下一步需要把登录身份、角色权限和菜单可见性接入服务端 RBAC middleware。后台审计页会突出显示 `resource.auto_pause` 自动保护记录，资源列表会展示 paused 资源的 `paused_at` 暂停时间。
+系统管理页面已不再依赖前端本地 seed 状态。当前后端提供 `SystemManagementStore`，PostgreSQL 环境读写 `system_users`、`system_roles`、`system_permissions`、`system_dictionaries`、`system_menus`；无数据库 store 时使用进程内 Demo 状态，方便本地调试新增、启停和菜单显隐。系统管理写操作会调用 `InsertAudit` 记录操作审计。Admin API 已接入服务端 RBAC middleware，后台初始化 overview 会按当前账号过滤菜单和系统管理数据；生产环境仍需用真实 PostgreSQL 和生产 token 映射验收。后台审计页会突出显示 `resource.auto_pause` 自动保护记录，资源列表会展示 paused 资源的 `paused_at` 暂停时间。
 
 App 发版中心的构建表单已去掉旧公网 IP 默认值，`apiBaseUrl` 默认从 `VITE_API_BASE_URL` 读取；未配置时使用当前页面 origin，并统一补齐末尾 `/`。这样本地 demo、Go server 托管后台和生产同源部署时，APK 写入的 API 地址不会误带过期环境。Mock 数据中的示例地址也改为 `127.0.0.1:18080`，避免误导生产配置。
 

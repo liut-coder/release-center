@@ -1,6 +1,7 @@
 package appreleases
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -107,5 +108,121 @@ func TestRoutesWithOptionsProtectsCIEndpoints(t *testing.T) {
 
 	if rec.Code != http.StatusUnauthorized {
 		t.Fatalf("expected CI endpoint to require token, got %d", rec.Code)
+	}
+}
+
+func TestRoutesWithOptionsEnforcesAdminRBAC(t *testing.T) {
+	service := NewService(Config{})
+	handler := NewHandler(service)
+	routes := handler.RoutesWithOptions(RouteOptions{
+		AdminMiddleware: []func(http.Handler) http.Handler{
+			BearerTokenMiddleware("admin-token", "release-token"),
+		},
+		AdminPermissionMiddleware: AdminRBACMiddleware(service, map[string]string{
+			"admin-token":   "system.admin",
+			"release-token": "release.admin",
+		}),
+	})
+
+	for _, tc := range []struct {
+		name      string
+		method    string
+		path      string
+		token     string
+		body      string
+		wantCode  int
+		wantError string
+	}{
+		{
+			name:     "release admin can read release center",
+			method:   http.MethodGet,
+			path:     "/admin/api/app-releases",
+			token:    "release-token",
+			wantCode: http.StatusOK,
+		},
+		{
+			name:     "release admin can initialize admin shell",
+			method:   http.MethodGet,
+			path:     "/admin/api/system/overview",
+			token:    "release-token",
+			wantCode: http.StatusOK,
+		},
+		{
+			name:      "release admin cannot write system management",
+			method:    http.MethodPost,
+			path:      "/admin/api/system/users",
+			token:     "release-token",
+			body:      `{"name":"受限用户","account":"limited.user","role_code":"release_viewer"}`,
+			wantCode:  http.StatusForbidden,
+			wantError: "auth.permission_denied",
+		},
+		{
+			name:     "system admin can write system management",
+			method:   http.MethodPost,
+			path:     "/admin/api/system/users",
+			token:    "admin-token",
+			body:     `{"name":"系统用户","account":"system.user","role_code":"release_viewer"}`,
+			wantCode: http.StatusOK,
+		},
+		{
+			name:     "missing token is rejected before RBAC",
+			method:   http.MethodGet,
+			path:     "/admin/api/system/overview",
+			wantCode: http.StatusUnauthorized,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			rec := httptest.NewRecorder()
+			req := httptest.NewRequest(tc.method, tc.path, strings.NewReader(tc.body))
+			if tc.token != "" {
+				req.Header.Set("Authorization", "Bearer "+tc.token)
+			}
+			routes.ServeHTTP(rec, req)
+			if rec.Code != tc.wantCode {
+				t.Fatalf("expected %d, got %d body=%s", tc.wantCode, rec.Code, rec.Body.String())
+			}
+			if tc.wantError != "" && !strings.Contains(rec.Body.String(), tc.wantError) {
+				t.Fatalf("expected error %q in body=%s", tc.wantError, rec.Body.String())
+			}
+		})
+	}
+}
+
+func TestSystemOverviewFiltersMenusByAdminPermissions(t *testing.T) {
+	service := NewService(Config{})
+	handler := NewHandler(service)
+	routes := handler.RoutesWithOptions(RouteOptions{
+		AdminMiddleware: []func(http.Handler) http.Handler{
+			BearerTokenMiddleware("release-token"),
+		},
+		AdminPermissionMiddleware: AdminRBACMiddleware(service, map[string]string{
+			"release-token": "release.admin",
+		}),
+	})
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/admin/api/system/overview", nil)
+	req.Header.Set("Authorization", "Bearer release-token")
+	routes.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected system overview to initialize, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	var overview SystemManagementOverview
+	if err := json.NewDecoder(rec.Body).Decode(&overview); err != nil {
+		t.Fatalf("decode overview: %v", err)
+	}
+	paths := map[string]bool{}
+	for _, menu := range overview.Menus {
+		paths[menu.Path] = true
+	}
+	if !paths["/dashboard"] || !paths["/release-center"] {
+		t.Fatalf("expected dashboard and release center menus, got %#v", paths)
+	}
+	if paths["/system/users"] || paths["/system/roles"] || paths["/system/menus"] {
+		t.Fatalf("expected system menus to be hidden for release admin, got %#v", paths)
+	}
+	if len(overview.Users) != 0 || len(overview.Roles) != 0 || len(overview.Permissions) != 0 {
+		t.Fatalf("expected system management records to be hidden, got users=%d roles=%d permissions=%d", len(overview.Users), len(overview.Roles), len(overview.Permissions))
 	}
 }

@@ -22,6 +22,67 @@ func (s *Service) SystemManagementOverview(ctx context.Context) (SystemManagemen
 	return overview, nil
 }
 
+func (s *Service) AdminHasPermission(ctx context.Context, account, permission string) (bool, error) {
+	account = strings.TrimSpace(account)
+	permission = strings.TrimSpace(permission)
+	if account == "" || permission == "" {
+		return false, nil
+	}
+	permissions, active, err := s.AdminPermissions(ctx, account)
+	if err != nil {
+		return false, err
+	}
+	return active && permissionsAllow(permissions, permission), nil
+}
+
+func (s *Service) AdminPermissions(ctx context.Context, account string) ([]string, bool, error) {
+	account = strings.TrimSpace(account)
+	if account == "" {
+		return nil, false, nil
+	}
+	if store, ok := s.store.(SystemPermissionStore); ok {
+		permissions, active, err := store.AdminRolePermissions(ctx, account)
+		if err != nil {
+			return nil, false, err
+		}
+		return permissions, active, nil
+	}
+	overview := s.demoSystemOverview()
+	permissions, active := accountPermissionsFromOverview(overview, account)
+	return permissions, active, nil
+}
+
+func (s *Service) FilterSystemManagementOverview(ctx context.Context, overview SystemManagementOverview, account string) SystemManagementOverview {
+	permissions, active, err := s.AdminPermissions(ctx, account)
+	if err != nil || !active {
+		return SystemManagementOverview{MessageZh: overview.MessageZh}
+	}
+	canReadRelease := permissionsAllow(permissions, "release:read")
+	canReadSystem := permissionsAllow(permissions, "system:read")
+	canWriteSystem := permissionsAllow(permissions, "system:write")
+
+	var menus []SystemMenuAdmin
+	for _, menu := range overview.Menus {
+		path := strings.TrimSpace(menu.Path)
+		switch {
+		case path == "/dashboard":
+			menus = append(menus, menu)
+		case path == "/release-center" && canReadRelease:
+			menus = append(menus, menu)
+		case strings.HasPrefix(path, "/system/") && (canReadSystem || canWriteSystem):
+			menus = append(menus, menu)
+		}
+	}
+	overview.Menus = menus
+	if !canReadSystem && !canWriteSystem {
+		overview.Users = nil
+		overview.Roles = nil
+		overview.Permissions = nil
+		overview.Dictionaries = nil
+	}
+	return overview
+}
+
 func (s *Service) CreateSystemUser(ctx context.Context, req CreateSystemUserRequest) (SystemUserActionResponse, error) {
 	req.Name = strings.TrimSpace(req.Name)
 	req.Account = strings.TrimSpace(req.Account)
@@ -420,6 +481,7 @@ func cloneSystemOverview(overview SystemManagementOverview) SystemManagementOver
 func demoSystemManagementOverview() SystemManagementOverview {
 	return SystemManagementOverview{
 		Users: []SystemUserAdmin{
+			{ID: "u_demo_000", Name: "系统管理员", Account: "system.admin", Role: "系统管理员", RoleCode: "system_admin", Department: "平台工程", Status: "enabled", LastLogin: "2026-06-02 15:30"},
 			{ID: "u_demo_001", Name: "发布管理员", Account: "release.admin", Role: "发版管理员", RoleCode: "release_admin", Department: "平台工程", Status: "enabled", LastLogin: "2026-06-02 13:46"},
 			{ID: "u_demo_002", Name: "测试负责人", Account: "qa.lead", Role: "发版管理员", RoleCode: "release_admin", Department: "质量保障", Status: "enabled", LastLogin: "2026-06-01 18:21"},
 			{ID: "u_demo_003", Name: "观察员", Account: "release.viewer", Role: "只读观察员", RoleCode: "release_viewer", Department: "运营支持", Status: "disabled", LastLogin: "2026-05-28 09:12"},
@@ -431,10 +493,13 @@ func demoSystemManagementOverview() SystemManagementOverview {
 		},
 		Permissions: []SystemPermissionAdmin{
 			{ID: "p_demo_001", Name: "查看首页", Code: "dashboard:view", Module: "工作台", Type: "menu", Enabled: true},
-			{ID: "p_demo_002", Name: "管理发布", Code: "release:write", Module: "发布中心", Type: "button", Enabled: true},
-			{ID: "p_demo_003", Name: "查看审计", Code: "release:audit", Module: "发布中心", Type: "api", Enabled: true},
-			{ID: "p_demo_004", Name: "维护用户", Code: "system:user:write", Module: "系统管理", Type: "button", Enabled: true},
-			{ID: "p_demo_005", Name: "维护菜单", Code: "system:menu:write", Module: "系统管理", Type: "button", Enabled: true},
+			{ID: "p_demo_002", Name: "查看发布", Code: "release:read", Module: "发布中心", Type: "api", Enabled: true},
+			{ID: "p_demo_003", Name: "管理发布", Code: "release:write", Module: "发布中心", Type: "button", Enabled: true},
+			{ID: "p_demo_004", Name: "查看审计", Code: "release:audit", Module: "发布中心", Type: "api", Enabled: true},
+			{ID: "p_demo_005", Name: "查看系统管理", Code: "system:read", Module: "系统管理", Type: "api", Enabled: true},
+			{ID: "p_demo_006", Name: "维护系统管理", Code: "system:write", Module: "系统管理", Type: "api", Enabled: true},
+			{ID: "p_demo_007", Name: "维护用户", Code: "system:user:write", Module: "系统管理", Type: "button", Enabled: true},
+			{ID: "p_demo_008", Name: "维护菜单", Code: "system:menu:write", Module: "系统管理", Type: "button", Enabled: true},
 		},
 		Dictionaries: []SystemDictionaryAdmin{
 			{ID: "d_demo_001", Group: "release_channel", Key: "stable", Label: "正式渠道", Value: "stable", Sort: 10, Enabled: true},
