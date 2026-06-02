@@ -17,7 +17,7 @@
 | 资源安全 | 增量资源白名单、ZIP 内容校验、禁止执行代码、SHA-256、文件大小校验和 Manifest Ed25519 签名已落地 |
 | 自动保护 | `activation_failed` 会自动暂停匹配资源版本，写入 `paused_at` 并记录 `resource.auto_pause` 审计 |
 | 质量观察 | overview API 输出 `quality_metrics`、`quality_policy`、`quality_alerts`；Web 统计页展示成功率、失败率、失败原因、阈值、策略建议和质量告警 |
-| 本机验证 | `go test ./...`、`go build -buildvcs=false ./cmd/server ./cmd/releasectl ./cmd/migrate`、`cd web && npm run smoke:browser` 已通过；无数据库 Demo store 已覆盖系统管理和 App 发版中心写入闭环；浏览器 smoke 覆盖桌面/移动 Chromium、登录、RBAC 菜单裁剪、系统页、App 发版中心关键标签页、构建创建、发布草稿创建、资源 ZIP 上传创建、运行时错误监听和页面横向溢出检查；真实 DB smoke 覆盖迁移、发布、资源发布、检查更新和自动暂停 |
+| 本机验证 | `go test ./...`、`go build -buildvcs=false ./cmd/server ./cmd/releasectl ./cmd/migrate`、`cd web && npm run smoke:browser` 已通过；无数据库 Demo store 已覆盖系统管理和 App 发版中心写入闭环；浏览器 smoke 覆盖桌面/移动 Chromium、登录、RBAC 菜单裁剪、系统页、用户创建、角色创建、权限创建、字典创建、菜单创建、App 发版中心关键标签页、构建创建、发布草稿创建、资源 ZIP 上传创建、运行时错误监听和页面横向溢出检查；真实 DB smoke 覆盖迁移、发布、资源发布、检查更新和自动暂停 |
 | 外部待验收 | 生产 18080 migration/重启、系统管理真实 PostgreSQL 环境 smoke、生产环境浏览器 smoke、真实 APK Android 安装升级 smoke、真实资源 Android 下载/验签/激活/回滚 smoke 仍需继续推进 |
 
 ## 当前项目推进与优化点
@@ -32,9 +32,9 @@
 - 资源安全闭环：增量资源白名单、ZIP 内容校验、禁止执行代码、SHA-256、文件大小校验、Manifest Ed25519 签名已落地。
 - 发布保护闭环：资源 `activation_failed` 会自动暂停对应资源版本，并写入 `resource.auto_pause` 审计。
 - 观测闭环：overview API 和 Web 统计页已展示 APK/资源成功率、失败率、失败原因、质量阈值、策略建议和质量告警。
-- 系统管理闭环：已新增用户、角色、权限、数据字典、菜单 PostgreSQL 表和 Admin API，前端系统管理页面已接入后端 overview/create/enable/disable/show/hide 接口；菜单 visible 状态和服务端 RBAC 过滤结果驱动侧栏导航和首页模块入口；无数据库时后端提供进程内可变 Demo store，便于本地调试系统管理和 App 发版中心表单写入。
+- 系统管理闭环：已新增用户、角色、权限、数据字典、菜单 PostgreSQL 表和 Admin API，前端系统管理页面已接入后端 overview/create/enable/disable/show/hide 接口；菜单 visible 状态和服务端 RBAC 过滤结果驱动侧栏导航和首页模块入口；无数据库时后端提供进程内可变 Demo store，便于本地调试系统管理和 App 发版中心表单写入；浏览器 smoke 已覆盖系统管理用户、角色、权限、数据字典和菜单新增写入。
 - 权限闭环：Admin API 已接入服务端 RBAC permission middleware，按 `release:read`、`release:write`、`release:audit`、`system:read`、`system:write` 拦截；`/admin/api/system/overview` 作为后台初始化入口按当前账号过滤菜单和系统管理数据。
-- 前端闭环：`web/` 已形成独立 Vite 管理台，具备登录、首页、系统管理页面和 App 发版中心业务模块；Playwright 浏览器 smoke 已覆盖桌面和移动视口，并验证构建、发布草稿、资源版本创建表单可真实提交到后端 Demo store。
+- 前端闭环：`web/` 已形成独立 Vite 管理台，具备登录、首页、系统管理页面和 App 发版中心业务模块；Playwright 浏览器 smoke 已覆盖桌面和移动视口，并验证系统管理新增表单、构建、发布草稿、资源版本创建表单可真实提交到后端 Demo store。
 - 本地验证闭环：Go test、Go build、Web build 和真实 DB smoke 均已跑通，覆盖迁移、发布、检查更新、资源发布和自动暂停。
 
 ### 仍需验收
@@ -64,6 +64,16 @@
 6. 发布前校验：发布 APK 或资源前检查 SHA-256、文件大小、Manifest 签名、公钥配置、目标渠道和灰度比例。
 7. 操作体验优化：后台增加发布前确认摘要、危险操作二次确认、失败原因聚合和一键复制 smoke 命令。
 8. 文档中心 MVP：整理文档目录、补 front matter、上线静态文档站，并在后台增加只读入口。
+
+### 最新闭环修复
+
+2026-06-02 已补齐系统管理写入 smoke 和稳定性修复：
+
+- 浏览器 smoke 新增系统管理用户、角色、权限、数据字典和菜单创建流程，覆盖桌面和移动视口。
+- 后端 Demo role 创建会把空权限标准化为 `[]`，避免返回 `permissions:null`。
+- 前端系统管理 API 客户端会标准化角色权限数组，避免角色表格渲染时因空权限白屏。
+- `system.admin` 的菜单过滤允许查看自定义菜单路径，`release.admin` 仍只保留首页和发布中心菜单。
+- 后端测试已覆盖系统管理员可见自定义菜单、发布管理员不可见自定义菜单。
 
 ### 中期演进点
 

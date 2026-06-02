@@ -178,7 +178,7 @@ export function normalizeSystemManagementOverview(payload: unknown): SystemManag
   return {
     _mock: Boolean(record?._mock) || undefined,
     users: readArray<SystemUser>(record, ["users"]),
-    roles: readArray<SystemRole>(record, ["roles"]),
+    roles: readArray<Record<string, unknown>>(record, ["roles"]).map(normalizeRole),
     permissions: readArray<SystemPermission>(record, ["permissions"]),
     dictionaries: readArray<SystemDictionary>(record, ["dictionaries"]),
     menus: readArray<SystemMenu>(record, ["menus"]),
@@ -197,7 +197,7 @@ function normalizeRoleAction(payload: unknown): { ok: boolean; role: SystemRole 
   const record = unwrapDataRecord(payload);
   const role = readRecord(record, ["role"]) ?? record;
   if (!role) throw new Error("角色响应格式不正确");
-  return { ok: record?.ok !== false, role: role as unknown as SystemRole };
+  return { ok: record?.ok !== false, role: normalizeRole(role) };
 }
 
 function normalizePermissionAction(payload: unknown): { ok: boolean; permission: SystemPermission } {
@@ -246,6 +246,13 @@ function readArray<T>(record: Record<string, unknown> | undefined, keys: string[
     if (Array.isArray(value)) return value as T[];
   }
   return [];
+}
+
+function normalizeRole(value: Record<string, unknown>): SystemRole {
+  return {
+    ...(value as unknown as SystemRole),
+    permissions: Array.isArray(value.permissions) ? (value.permissions as string[]) : [],
+  };
 }
 
 function mockUser(payload: CreateSystemUserPayload): SystemUser {

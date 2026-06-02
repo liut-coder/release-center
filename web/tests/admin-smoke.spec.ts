@@ -34,6 +34,8 @@ test.describe("admin console smoke", () => {
     await page.getByRole("button", { name: "新增用户" }).click();
     await expect(page.getByRole("cell", { name: "新用户" }).first()).toBeVisible();
 
+    await submitSystemManagementForms(page);
+
     await openSidebarIfMobile(page);
     await navButton(page, "菜单编辑").click();
     await expect(page.getByRole("heading", { name: "菜单编辑" })).toBeVisible();
@@ -95,6 +97,36 @@ async function verifyAppReleaseTabs(page: Page) {
 
   await releaseTab(page, "操作审计").click();
   await expect(page.getByPlaceholder("搜索操作人 / 动作 / 对象")).toBeVisible();
+  await expectNoPageOverflow(page);
+}
+
+async function submitSystemManagementForms(page: Page) {
+  await openSidebarIfMobile(page);
+  await navButton(page, "角色管理").click();
+  await expect(page.getByRole("heading", { name: "角色管理" })).toBeVisible();
+  await page.getByRole("button", { name: "新增角色" }).click();
+  await expect(page.getByText("新角色").first()).toBeVisible();
+  await expectNoPageOverflow(page);
+
+  await openSidebarIfMobile(page);
+  await navButton(page, "权限管理").click();
+  await expect(page.getByRole("heading", { name: "权限管理" })).toBeVisible();
+  await page.getByRole("button", { name: "新增权限" }).click();
+  await expect(page.getByRole("cell", { name: "新权限" }).first()).toBeVisible();
+  await expectNoPageOverflow(page);
+
+  await openSidebarIfMobile(page);
+  await navButton(page, "数据字典").click();
+  await expect(page.getByRole("heading", { name: "数据字典" })).toBeVisible();
+  await page.getByRole("button", { name: "新增字典" }).click();
+  await expect(page.getByRole("cell", { name: "新字典项" }).first()).toBeVisible();
+  await expectNoPageOverflow(page);
+
+  await openSidebarIfMobile(page);
+  await navButton(page, "菜单编辑").click();
+  await expect(page.getByRole("heading", { name: "菜单编辑" })).toBeVisible();
+  await page.getByRole("button", { name: "新增菜单" }).click();
+  await expect(page.getByRole("cell", { name: "新菜单" }).first()).toBeVisible();
   await expectNoPageOverflow(page);
 }
 

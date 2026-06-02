@@ -226,3 +226,38 @@ func TestSystemOverviewFiltersMenusByAdminPermissions(t *testing.T) {
 		t.Fatalf("expected system management records to be hidden, got users=%d roles=%d permissions=%d", len(overview.Users), len(overview.Roles), len(overview.Permissions))
 	}
 }
+
+func TestSystemOverviewKeepsCustomMenusForSystemAdmin(t *testing.T) {
+	service := NewService(Config{})
+	overview, err := service.SystemManagementOverview(t.Context())
+	if err != nil {
+		t.Fatalf("overview failed: %v", err)
+	}
+	overview.Menus = append(overview.Menus, SystemMenuAdmin{
+		ID:      "m_custom",
+		Title:   "自定义菜单",
+		Path:    "/custom/tools",
+		Icon:    "Settings",
+		Parent:  "系统管理",
+		Sort:    100,
+		Visible: true,
+	})
+
+	filtered := service.FilterSystemManagementOverview(t.Context(), overview, "system.admin")
+	paths := map[string]bool{}
+	for _, menu := range filtered.Menus {
+		paths[menu.Path] = true
+	}
+	if !paths["/custom/tools"] {
+		t.Fatalf("expected system admin to see custom menu, got %#v", paths)
+	}
+
+	filtered = service.FilterSystemManagementOverview(t.Context(), overview, "release.admin")
+	paths = map[string]bool{}
+	for _, menu := range filtered.Menus {
+		paths[menu.Path] = true
+	}
+	if paths["/custom/tools"] {
+		t.Fatalf("expected release admin not to see custom menu, got %#v", paths)
+	}
+}

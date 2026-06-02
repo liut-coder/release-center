@@ -69,7 +69,7 @@ func (s *Service) FilterSystemManagementOverview(ctx context.Context, overview S
 			menus = append(menus, menu)
 		case path == "/release-center" && canReadRelease:
 			menus = append(menus, menu)
-		case strings.HasPrefix(path, "/system/") && (canReadSystem || canWriteSystem):
+		case canReadSystem || canWriteSystem:
 			menus = append(menus, menu)
 		}
 	}
@@ -528,7 +528,11 @@ func demoSystemRole(req CreateSystemRoleRequest) SystemRoleAdmin {
 	if req.Enabled != nil {
 		enabled = *req.Enabled
 	}
-	return SystemRoleAdmin{ID: "r_demo_" + uuid.NewString(), Name: req.Name, Code: req.Code, Scope: req.Scope, Permissions: req.Permissions, Enabled: enabled}
+	permissions := normalizeStringList(req.Permissions)
+	if permissions == nil {
+		permissions = []string{}
+	}
+	return SystemRoleAdmin{ID: "r_demo_" + uuid.NewString(), Name: req.Name, Code: req.Code, Scope: req.Scope, Permissions: permissions, Enabled: enabled}
 }
 
 func demoSystemPermission(req CreateSystemPermissionRequest) SystemPermissionAdmin {
