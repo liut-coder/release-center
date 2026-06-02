@@ -4,9 +4,9 @@
 
 ## 1. 背景与目标
 
-当前仓库已有 `appreleases` 模块，覆盖游戏助手 App 的 APK 整包发布、启动页资源增量更新、资源白名单校验、CLI 打包上传、灰度发布、自动暂停和审计。独立发布中心的目标是在此基础上抽象出一套可独立部署、可服务多应用、多环境、多渠道、多制品类型的发布平台。
+当前仓库已有 `appreleases` 模块，覆盖游戏助手 App 的 APK 整包发布、启动页资源增量更新、资源白名单校验、CLI 打包上传、灰度发布、自动暂停和审计。独立发布中心的目标不是继续做一个“App 发版中心大页面”，而是在现有能力上抽象出一套可独立部署、可服务多项目、多应用、多环境、多渠道、多制品类型的发布平台。
 
-独立发布中心不再只是某个业务服务里的“App 发版页面”，而是一个独立系统：
+独立发布中心不再只是某个业务服务里的“App 发版页面”，而是一个通用发布系统：
 
 ```text
 CI/CD
@@ -17,9 +17,9 @@ CI/CD
   ↓
 审批与发布
   ↓
-客户端下载/服务端拉取
+客户端更新 / 静态站部署 / 服务端拉取 / 外部平台部署
   ↓
-设备/实例事件回传
+设备 / 服务实例 / 部署平台事件回传
   ↓
 观测、回滚、审计
 ```
@@ -27,16 +27,24 @@ CI/CD
 核心目标：
 
 1. 支持多应用、多平台、多环境、多渠道统一发布。
-2. 支持 APK、AAB、增量资源包、配置包、Web 前端包、服务端二进制、Docker 镜像等制品类型。
+2. 支持 APK、AAB、增量资源包、配置包、Web 前端包、文档站、Cloudflare Worker、服务端二进制、Docker 镜像等制品类型。
 3. 区分构建、制品、发布计划、发布批次和运行事件。
-4. 支持普通发布、灰度发布、定向发布、强制更新、暂停、召回、回滚。
+4. 支持普通发布、灰度发布、定向发布、强制更新、外部部署、暂停、召回、回滚。
 5. 支持发布审批、权限隔离、操作审计和发布冻结窗口。
 6. 支持从 GitHub、自建 Gitea 拉取项目，并对 Android、iOS、Java、Go、Python、Node.js、PHP、Docker 等主流技术栈执行持续集成。
-7. 支持独立客户端 API、管理后台 API、CI Runner API 和 Webhook API。
+7. 支持独立管理后台 API、CI/CLI API、客户端 API、服务实例 API、部署回调 API 和 Webhook API。
 8. 支持与现有 `appreleases` 模块平滑迁移，优先复用 APK 与资源增量能力。
 9. 支持生产级安全：制品校验、Manifest 签名、访问令牌、下载防盗链、敏感操作二次确认。
-10. 支持发布质量观测：下载成功率、安装成功率、激活失败率、版本分布、回滚原因。
+10. 支持发布质量观测：下载成功率、安装成功率、激活失败率、部署成功率、实例版本分布、回滚原因。
 11. 支持后续扩展为通用发布平台，而不是只服务游戏助手 App。
+
+当前页面需要同步调整的方向：
+
+```text
+不要以 App 发版中心作为唯一主导航
+应改成 项目 / 制品 / 发布 / 部署 / 观测 / 审计 / 系统管理
+App 更新、资源增量、Web 发布、服务端发布、Docker 发布都是发布类型
+```
 
 ## 2. 建设原则
 
@@ -113,30 +121,36 @@ created_at
 
 ### 3.1 一期范围
 
-一期聚焦 App 发布中心独立化和外部 CI 接入：
+一期聚焦通用发布中心骨架和外部 CI 接入，App 发布作为首个兼容模块落地：
 
-- 多应用管理。
-- Android APK 整包发布。
-- 启动页资源增量发布。
-- 构建登记与制品上传。
+- 项目空间管理。
+- 应用 / 发布单元管理，支持 Android、Web、Server、Docs、Worker、Docker、Config。
+- 构建登记与多制品上传。
 - GitHub / Gitea 仓库绑定。
 - Git Webhook 接收。
-- 发布创建、编辑、审批、发布、暂停、召回、回滚。
-- 指定渠道、指定设备、指定用户、百分比灰度。
-- 客户端检查更新 API。
-- 资源 Manifest 获取与包下载。
-- 设备安装记录和升级事件上报。
-- 管理后台基础页面。
-- CLI 上传和外部 CI 接入。
+- 通用发布计划：选择制品、编辑发布说明、选择环境/渠道、设置发布类型。
+- 通用发布动作：发布、暂停、召回、回滚、归档。
+- 部署目标管理：Cloudflare Pages、Worker、对象存储、Webhook、SSH 主机、Docker 主机先登记配置。
+- 部署记录：记录部署状态、URL、外部 deployment_id、日志摘要和回滚记录。
+- Android APK / AAB 整包发布，兼容现有 update-check、下载和事件上报。
+- Android 增量资源发布，兼容 Manifest、资源包下载、ZIP 安全校验和自动暂停。
+- Web dist / 文档站发布，记录 Pages 或静态托管部署结果。
+- 服务端二进制 / 配置包发布登记，记录下载 URL、SHA-256、部署目标和外部部署结果。
+- Docker 镜像发布登记，记录 registry、image、tag、digest 和外部部署结果。
+- 观测页覆盖 App 设备事件、Web/服务端部署事件、实例心跳和失败原因。
+- 管理后台基础页面按通用发布中心组织。
+- CLI 上传、部署回调和外部 CI 接入。
+- 系统管理基础能力：用户、角色、权限、菜单、数据字典的持久化和 RBAC 拦截。
 
 ### 3.2 二期范围
 
 - 内置 CI Runner。
 - 多语言流水线模板：Android、iOS、Java、Go、Python、Node.js、PHP、Docker。
 - GitHub 和 Gitea 代码拉取、分支选择、Tag 构建、PR/MR 构建。
-- Docker 镜像构建、推送和部署 Webhook。
+- Docker 镜像构建、推送和部署 Webhook 深度集成。
 - iOS TestFlight / App Store 发布状态接入。
-- Web 前端包发布。
+- Web 前端包发布策略和 CDN 刷新。
+- 文档中心发布、搜索、权限和版本联动。
 - 服务端二进制或容器镜像发布编排。
 - 多租户项目空间。
 - 发布日历和冻结窗口。
@@ -150,32 +164,34 @@ created_at
 - 一期不做 APK 差分补丁。
 - 不通过增量资源发布可执行代码。
 - 一期不强制把 CI 构建逻辑完全搬进发布中心；先支持 GitHub Actions、Gitea Actions、Jenkins 等外部 CI 登记结果，二期再建设内置 Runner。
+- 一期不自研完整 Kubernetes、Docker Compose、SSH 发布编排，只记录目标、触发外部系统和接收部署结果。
+- 一期不做在线文档 CMS，文档源码仍以 Git 为主。
 
 ## 4. 总体架构
 
 ```text
 ┌─────────────────────────────────────────────────────────┐
 │                      管理后台 Web                         │
-│  应用 / 构建 / 制品 / 发布 / 灰度 / 审批 / 监控 / 审计       │
+│  项目 / 制品 / 发布 / 部署 / 观测 / 审批 / 审计 / 系统管理   │
 └───────────────────────────┬─────────────────────────────┘
                             │ Admin API
 ┌───────────────────────────▼─────────────────────────────┐
 │                     Release Center API                   │
 │                                                         │
-│  App 管理      制品管理      发布编排      策略引擎         │
-│  审批流        灰度引擎      事件接收      观测统计         │
-│  审计日志      回滚控制      Manifest      Webhook        │
+│  项目空间      制品管理      发布编排      策略引擎         │
+│  部署目标      灰度引擎      事件接收      观测统计         │
+│  RBAC          审批流        回滚控制      Webhook        │
 └───────────────┬───────────────────────┬─────────────────┘
                 │                       │
         ┌───────▼────────┐      ┌───────▼────────┐
         │ PostgreSQL      │      │ 对象存储/文件中心 │
-        │ 元数据/事件/审计 │      │ APK/ZIP/Manifest │
+        │ 元数据/事件/审计 │      │ APK/ZIP/dist/bin  │
         └────────────────┘      └────────────────┘
                 ▲                       ▲
                 │                       │
 ┌───────────────┴──────────────┐ ┌──────┴──────────────────┐
-│ CI/CD / releasectl            │ │ 客户端 / 设备 / 服务实例   │
-│ 构建登记、制品上传、资源打包    │ │ 检查更新、下载、事件回传     │
+│ CI/CD / releasectl            │ │ 客户端 / 服务实例 / 部署平台 │
+│ 构建登记、制品上传、部署回调    │ │ 检查更新、拉取制品、事件回传 │
 └──────────────────────────────┘ └─────────────────────────┘
 ```
 
@@ -1235,7 +1251,7 @@ manifest-{resourceVersion}.json
 
 ## 10. API 设计
 
-API 分三组：管理后台 API、CI/CLI API、客户端 API。
+API 分五组：管理后台 API、CI/CLI API、客户端 API、服务实例 API、Webhook / 部署回调 API。
 
 ### 10.1 管理后台 API
 
@@ -1378,6 +1394,39 @@ POST /api/v1/apps/update-events
 }
 ```
 
+### 10.4 服务实例 API
+
+服务端、Worker、Docker 服务等运行实例使用这组 API 上报版本和拉取发布决策。
+
+实例心跳：
+
+```text
+POST /api/v1/instances/heartbeat
+```
+
+发布检查：
+
+```text
+POST /api/v1/instances/release-check
+```
+
+部署事件：
+
+```text
+POST /api/v1/instances/deployment-events
+```
+
+### 10.5 Webhook / 部署回调 API
+
+Git 和外部部署平台使用这组 API 回传事件。
+
+```text
+POST /api/v1/webhooks/github
+POST /api/v1/webhooks/gitea
+POST /api/v1/ci/deployments
+POST /api/v1/deployments/{deployment_id}/callback
+```
+
 ## 11. 发布流程
 
 ### 11.1 APK 整包发布流程
@@ -1489,22 +1538,27 @@ releasectl resource-pack
 
 展示：
 
-- 应用数量。
+- 项目数量。
+- 发布单元数量。
+- 制品数量。
 - 今日发布次数。
+- 今日部署次数。
 - 进行中灰度。
 - 异常发布。
+- 失败部署。
 - 最新失败事件。
-- 各应用当前稳定版本。
+- 各项目当前生产版本。
+- 各发布类型分布：App、Web、Server、Docker、Docs、Config。
 
-### 12.2 应用详情页
+### 12.2 项目与发布单元页
 
 展示：
 
-- 应用基本信息。
-- 平台、包名、负责人。
-- 渠道列表。
-- 当前版本和资源版本。
-- 最近构建、最近发布、版本分布。
+- 项目基本信息、负责人、默认环境和默认审批策略。
+- 发布单元列表：Android App、Web 站点、服务端服务、文档站、Worker、Docker 服务、配置包。
+- 每个发布单元的平台、包名或服务名、仓库、部署目标、当前版本。
+- 渠道 / 环境列表。
+- 最近构建、最近发布、最近部署和版本分布。
 
 ### 12.3 构建与制品页
 
@@ -1513,8 +1567,9 @@ releasectl resource-pack
 - 查看构建列表。
 - 查看构建日志摘要。
 - 上传制品。
-- 查看 SHA-256、大小、下载地址。
+- 查看制品类型、SHA-256、镜像 digest、大小、下载地址或 registry 地址。
 - 标记制品归档。
+- 按 APK、资源包、Web dist、文档站、二进制、配置包、Docker 镜像筛选。
 
 ### 12.4 发布管理页
 
@@ -1522,42 +1577,81 @@ releasectl resource-pack
 
 - 创建发布。
 - 选择构建和制品。
+- 选择发布类型：App 整包、App 资源、Web 静态站、文档站、服务端二进制、配置包、Docker 镜像、Worker。
 - 编辑发布说明。
-- 设置更新级别。
-- 设置灰度比例和定向规则。
+- 设置目标环境、渠道、部署目标。
+- 针对 App 设置更新级别、灰度比例和定向规则。
+- 针对 Web / Server / Docker 设置部署策略、外部 Webhook 和回滚目标。
 - 提交审批、发布、暂停、召回、回滚。
 
-### 12.5 资源发布页
+### 12.5 部署目标与部署记录页
 
 功能：
 
-- 查看资源版本。
-- 查看 Manifest。
-- 查看资源包列表。
-- 查看白名单 package_key。
-- 上传 ZIP。
-- 发布、暂停、回滚资源版本。
+- 管理部署目标：Cloudflare Pages、Cloudflare Worker、对象存储、Webhook、SSH 主机、Docker 主机、Kubernetes。
+- 查看部署记录：环境、目标、状态、外部 deployment_id、URL、日志摘要、失败原因。
+- 手工触发外部部署 Webhook。
+- 接收 CI 或部署平台回传结果。
+- 回滚到上一部署记录。
 
-### 12.6 观测页
+### 12.6 App 更新与资源页
+
+功能：
+
+- 查看 APK / AAB 发布。
+- 查看资源版本、Manifest 和资源包列表。
+- 查看白名单 package_key。
+- 上传资源 ZIP。
+- 发布、暂停、回滚资源版本。
+- 查看设备版本分布和资源激活结果。
+
+### 12.7 文档中心页
+
+功能：
+
+- 查看文档站列表。
+- 查看文档构建记录和部署记录。
+- 关联发布说明、升级指南、API 文档和 Runbook。
+- 打开预览 URL 和生产 URL。
+- 回滚文档站部署版本。
+
+### 12.8 观测页
 
 展示：
 
-- 更新检查量。
+- 发布类型维度的发布次数和失败次数。
+- App 更新检查量。
 - 下载成功率。
 - 安装成功率。
 - 资源激活成功率。
+- Web / 文档站部署成功率。
+- 服务端实例升级成功率。
+- Docker 部署成功率。
 - 失败原因 Top N。
 - 设备版本分布。
+- 服务实例版本分布。
 - 灰度批次指标对比。
 
-### 12.7 审批与审计页
+### 12.9 审批与审计页
 
 功能：
 
 - 待审批发布列表。
 - 审批通过/拒绝。
 - 查看操作记录。
-- 按操作人、应用、动作、时间过滤。
+- 按操作人、项目、发布单元、动作、时间过滤。
+
+### 12.10 系统管理页
+
+功能：
+
+- 用户管理。
+- 角色管理。
+- 权限管理。
+- 菜单管理。
+- 数据字典。
+- API Token 管理。
+- RBAC 权限拦截配置。
 
 ## 13. 权限设计
 
@@ -1620,6 +1714,7 @@ emergency 发布
 
 ```bash
 releasectl app list
+releasectl project list
 releasectl build create
 releasectl artifact upload
 releasectl release create
@@ -1627,6 +1722,11 @@ releasectl release publish
 releasectl release rollout
 releasectl release pause
 releasectl release rollback
+releasectl deployment create
+releasectl deployment callback
+releasectl web upload
+releasectl docker register
+releasectl docs deploy
 releasectl resource catalog
 releasectl resource pack
 releasectl resource upload
@@ -1635,15 +1735,17 @@ releasectl resource upload
 CI 推荐流程：
 
 ```text
-构建 APK
+构建制品
   ↓
-计算 SHA-256
+计算 SHA-256 或镜像 digest
   ↓
 releasectl artifact upload
   ↓
 releasectl build create
   ↓
-可选：releasectl release create --channel internal
+可选：releasectl release create --environment staging
+  ↓
+外部部署完成后 releasectl deployment callback
 ```
 
 只有受保护环境允许自动发布：
@@ -1658,12 +1760,15 @@ RELEASE_CENTER_BASE_URL
 发布前检查：
 
 - 制品 SHA-256 存在。
-- APK versionCode 大于当前渠道线上版本。
-- 资源版本号未复用。
-- Manifest 包列表完整。
+- Docker 镜像 digest 存在。
+- App 发布时 APK versionCode 大于当前渠道线上版本。
+- App 资源发布时资源版本号未复用。
+- App 资源发布时 Manifest 包列表完整。
+- Web / 文档站发布时部署 URL 或 Pages deployment_id 存在。
+- 服务端发布时部署目标和回滚目标存在。
 - 发布说明不为空。
 - 强制更新必须填写原因。
-- stable 发布必须通过审批。
+- production / stable 发布必须通过审批。
 - 当前不在冻结窗口。
 
 发布中监控：
@@ -1672,6 +1777,8 @@ RELEASE_CENTER_BASE_URL
 - 校验失败率。
 - 安装失败率。
 - 资源激活失败率。
+- 部署失败率。
+- 实例心跳失败率。
 - 崩溃率。
 - 任务执行失败率。
 
@@ -1681,6 +1788,8 @@ RELEASE_CENTER_BASE_URL
 资源 activation_failed >= 3 且失败率 >= 5%
 APK checksum_failed >= 3
 APK install_failed >= 10 且失败率 >= 10%
+server deployment_failed >= 2
+docker rollout_failed >= 2
 关键任务执行失败率超过基线 20%
 ```
 
@@ -1701,6 +1810,16 @@ APK install_failed >= 10 且失败率 >= 10%
 - 资源 ZIP 白名单校验。
 - CLI `resource-pack` 和 `resource-upload`。
 - `activation_failed` 自动暂停。
+
+需要新增的通用能力：
+
+- project / application 通用发布单元。
+- artifact 通用制品类型。
+- release_plan 通用发布计划。
+- deployment_target 和 deployment 记录。
+- instance heartbeat 和 deployment event。
+- RBAC 用户、角色、权限、菜单和 API 拦截。
+- Web / 文档站 / 服务端 / Docker 发布记录。
 
 ### 17.2 迁移路径
 
@@ -1724,6 +1843,8 @@ internal/modules/releasecenter
 ```text
 /admin/api/release-center/*
 /api/v1/apps/*
+/api/v1/instances/*
+/api/v1/ci/deployments
 ```
 
 第二步：抽象通用表。
@@ -1742,9 +1863,11 @@ internal/modules/releasecenter
 
 第四步：上线独立后台。
 
-- 先只展示游戏助手。
-- 验证发布流程和观测闭环。
-- 再接入其他 App 或 Web/Server 发布。
+- 首屏按项目 / 制品 / 发布 / 部署 / 观测 / 审计组织。
+- App 发版中心降级为发布类型或子模块，而不是唯一主页面。
+- 验证 Android 发布流程和观测闭环。
+- 同时接入一个 Web dist 或文档站发布 smoke。
+- 再接入服务端二进制和 Docker 镜像登记。
 
 ### 17.3 兼容期策略
 
@@ -1762,19 +1885,38 @@ internal/modules/releasecenter
 交付：
 
 - 独立服务配置。
-- 应用、构建、制品、发布表。
-- 管理后台基础总览。
+- 项目、发布单元、构建、制品、发布、部署记录表。
+- RBAC 用户、角色、权限、菜单基础表。
+- 管理后台通用总览。
 - CI/CLI 构建登记与制品上传。
-- APK 发布兼容现有能力。
+- APK 发布和资源发布兼容现有能力。
+- Web dist / 文档站 / 服务端二进制 / Docker 镜像能登记制品和发布记录。
 
 验收：
 
-- 能创建应用。
-- 能上传 APK 制品。
-- 能创建 internal 发布。
-- 客户端能检查到更新。
+- 能创建项目和发布单元。
+- 能上传 APK、Web dist、binary 或登记 Docker 镜像。
+- 能创建 internal / staging 发布。
+- Android 客户端能检查到更新。
+- Web / 文档站发布能记录部署 URL。
 
-### M2：资源增量独立化
+### M2：部署目标和外部部署回调
+
+交付：
+
+- 部署目标管理。
+- 外部 Webhook 部署触发。
+- 部署状态回调 API。
+- 部署日志摘要和失败原因。
+- 部署回滚记录。
+
+验收：
+
+- Cloudflare Pages 或外部部署平台能回传 deployment 状态。
+- 服务端二进制或 Docker 镜像能关联部署目标。
+- 能看到每个发布的部署历史。
+
+### M3：资源增量和 App 灰度
 
 交付：
 
@@ -1782,6 +1924,7 @@ internal/modules/releasecenter
 - 资源打包上传。
 - Manifest 生成。
 - 资源发布和暂停。
+- App 灰度批次和定向规则。
 - `activation_failed` 自动暂停。
 
 验收：
@@ -1789,24 +1932,25 @@ internal/modules/releasecenter
 - 能上传并发布 `templates-bear` 资源包。
 - 客户端能拿到 Manifest。
 - 上报 `activation_failed` 后版本自动暂停。
+- App stable 能从 5% 调整到 20%、50%、100%。
 
-### M3：灰度、审批与审计
+### M4：审批、RBAC 与审计
 
 交付：
 
 - 发布审批流。
-- 灰度批次。
-- 定向规则。
+- RBAC 用户、角色、权限、菜单。
+- API 权限拦截。
 - 审计列表。
 - 发布前检查。
 
 验收：
 
 - stable 发布必须审批。
-- 能从 5% 调整到 20%、50%、100%。
+- 不同角色看到的菜单和可执行操作不同。
 - 每次操作都有审计记录。
 
-### M4：观测与自动化回滚
+### M5：观测与自动化回滚
 
 交付：
 
@@ -1815,25 +1959,27 @@ internal/modules/releasecenter
 - 自动暂停规则配置。
 - 告警通知。
 - 资源回滚入口。
+- 部署回滚入口。
 
 验收：
 
 - 能看到每个发布批次的成功率。
 - 达到阈值时自动暂停并告警。
-- 能一键回滚资源版本。
+- 能一键回滚资源版本或部署版本。
 
-### M5：扩展制品类型
+### M6：内置 Runner 和深度部署编排
 
 交付：
 
-- Web 前端包发布。
-- 服务端二进制或镜像发布登记。
-- Webhook 接入部署系统。
+- 内置 Docker Runner。
+- 多语言流水线模板。
+- Kubernetes / Docker Compose / SSH 深度部署编排。
+- CDN 刷新和对象存储发布。
 
 验收：
 
-- 发布中心能管理非 App 制品。
-- Webhook 可触发外部部署流程。
+- 外部 CI 不再是唯一构建来源。
+- 发布中心能直接编排部分部署目标。
 
 ## 19. 风险与应对
 
@@ -1852,27 +1998,33 @@ internal/modules/releasecenter
 如果希望快速上线独立发布中心，一期最小集合如下：
 
 ```text
-1. applications
-2. builds
-3. artifacts
-4. release_plans
-5. release_rules
-6. installations
-7. runtime_events
-8. audit_logs
-9. APK update-check
-10. resource-check + manifest + package download
-11. releasectl artifact/resource upload
-12. 管理后台：应用、构建、发布、资源、事件、审计
+1. projects
+2. applications / release_units
+3. builds
+4. artifacts
+5. release_plans
+6. release_rules
+7. deployment_targets
+8. deployments
+9. installations / runtime_instances
+10. runtime_events
+11. audit_logs
+12. rbac_users / rbac_roles / rbac_permissions / rbac_menus
+13. APK update-check
+14. resource-check + manifest + package download
+15. instance release-check + deployment-events
+16. releasectl artifact/resource/web/docker/docs upload or register
+17. 管理后台：项目、制品、发布、部署、观测、审计、系统管理
 ```
 
 必须具备的安全能力：
 
 ```text
 SHA-256 校验
+Docker digest 记录
 资源 ZIP 禁止项校验
 CI Token
-后台权限
+后台 RBAC 权限
 敏感操作审计
 资源 activation_failed 自动暂停
 ```
@@ -1884,7 +2036,8 @@ Manifest Ed25519 签名
 复杂审批流
 发布冻结窗口
 多租户
-Web/Server 发布
+内置 Runner
+复杂 Web/Server 编排
 自动回滚策略配置
 高级报表
 ```
@@ -1893,10 +2046,12 @@ Web/Server 发布
 
 建议按以下顺序推进：
 
-1. 先确认独立发布中心一期是否只服务游戏助手 Android。
+1. 确认一期不再只服务游戏助手 Android，而是通用发布中心骨架 + Android 首个闭环。
 2. 确认是否独立部署新服务，还是先在现有服务中以新路由独立。
-3. 设计新表 migration，并保留旧接口兼容。
-4. 将现有 `appreleases` 策略和资源打包能力迁移到 `releasecenter`。
-5. 建立管理后台最小页面。
+3. 设计通用 project / artifact / release / deployment / RBAC migration，并保留旧接口兼容。
+4. 将现有 `appreleases` 策略和资源打包能力迁移到 `releasecenter` 兼容层。
+5. 重构管理后台导航为项目、制品、发布、部署、观测、审计、系统管理。
 6. 跑通 internal APK 发布和资源增量发布 smoke。
-7. 再开放 beta/stable 审批和灰度。
+7. 同时跑通 Web dist 或文档站部署记录 smoke。
+8. 接入服务端二进制和 Docker 镜像登记。
+9. 再开放 beta/stable 审批、灰度、RBAC 和自动质量门禁。
