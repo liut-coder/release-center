@@ -40,6 +40,7 @@ import {
   type AppBuildStatus,
   type AppInfo,
   type AppInstallation,
+  type AppBuildArtifact,
   type AppRelease,
   type AppReleaseAuditLog,
   type AppReleaseBuildJob,
@@ -1308,6 +1309,7 @@ function AppReleasePanel({
               />
               <Info label="Git" value={`${selectedBuild.git_ref} @ ${selectedBuild.git_commit || "-"}`} />
               <Info label="文件" value={selectedBuild.file_name || selectedBuild.artifact_path || "-"} />
+              <BuildArtifactsList job={selectedBuild} compact />
             </div>
           ) : null}
           <div className="grid grid-cols-2 gap-2">
@@ -2000,6 +2002,7 @@ function BuildJobPanel({ job, compact = false }: { job: AppReleaseBuildJob; comp
         <Info label="默认服务" value={job.api_base_url || "-"} />
         <Info label="构建备注" value={job.release_notes || "-"} />
       </div>
+      <BuildArtifactsList job={job} compact={compact} />
       {job.error_message ? <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-xs text-red-700">{job.error_message}</div> : null}
       <pre className={cn("overflow-auto rounded-lg border bg-zinc-950 p-3 text-xs leading-5 text-zinc-100", compact ? "max-h-[140px]" : "max-h-[260px]")}>
         {(job.log_tail?.length ? job.log_tail : ["等待构建日志"]).join("\n")}
@@ -2019,7 +2022,7 @@ function BuildJobsTable({ jobs, onCreateRelease }: { jobs: AppReleaseBuildJob[];
           <Th>Git</Th>
           <Th>环境</Th>
           <Th>状态</Th>
-          <Th>大小</Th>
+          <Th>产物</Th>
           <Th>时间</Th>
           <Th>操作</Th>
         </tr>
@@ -2035,7 +2038,9 @@ function BuildJobsTable({ jobs, onCreateRelease }: { jobs: AppReleaseBuildJob[];
             <Td>
               <Badge tone={buildStatusTone(job.status)}>{buildStatusLabel(job.status)}</Badge>
             </Td>
-            <Td>{formatBytes(job.artifact_size)}</Td>
+            <Td>
+              <BuildArtifactSummary job={job} />
+            </Td>
             <Td>{formatDateTime(job.finished_at || job.started_at || job.created_at)}</Td>
             <Td>
               <Button variant="secondary" size="sm" disabled={job.status !== "success"} onClick={() => onCreateRelease(job)}>
@@ -2051,6 +2056,53 @@ function BuildJobsTable({ jobs, onCreateRelease }: { jobs: AppReleaseBuildJob[];
         ) : null}
       </tbody>
     </Table>
+  );
+}
+
+function BuildArtifactsList({ job, compact = false }: { job: AppReleaseBuildJob; compact?: boolean }) {
+  const artifacts = buildArtifacts(job);
+  if (!artifacts.length) return null;
+  return (
+    <div className="grid gap-2 rounded-lg border bg-white p-3 text-xs">
+      <div className="flex items-center justify-between gap-2">
+        <div className="font-medium">构建产物</div>
+        <Badge>{artifacts.length} 个</Badge>
+      </div>
+      <div className={cn("grid gap-2", compact ? "" : "md:grid-cols-2")}>
+        {artifacts.map((artifact) => (
+          <div key={artifact.id || `${artifact.name}-${artifact.artifact_path}`} className="min-w-0 rounded-md border bg-muted/60 p-2">
+            <div className="mb-1 flex items-center justify-between gap-2">
+              <span className="truncate font-medium">{artifact.name || artifact.file_name || artifact.artifact_type}</span>
+              <Badge>{artifact.artifact_type || "artifact"}</Badge>
+            </div>
+            <div className="grid gap-1 text-[11px] text-muted-foreground">
+              <div className="truncate">{artifact.file_name || artifact.artifact_path || "-"}</div>
+              <div className="flex justify-between gap-2">
+                <span>{formatBytes(artifact.size_bytes)}</span>
+                <span className="truncate font-mono">{shortHash(artifact.sha256)}</span>
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function BuildArtifactSummary({ job }: { job: AppReleaseBuildJob }) {
+  const artifacts = buildArtifacts(job);
+  if (!artifacts.length) return <span>{formatBytes(job.artifact_size)}</span>;
+  return (
+    <div className="grid gap-1 text-xs">
+      <div className="font-medium">{artifacts.length} 个产物</div>
+      <div className="text-muted-foreground">{formatBytes(sumArtifactSize(artifacts))}</div>
+      <div className="flex max-w-[220px] flex-wrap gap-1">
+        {artifacts.slice(0, 3).map((artifact) => (
+          <Badge key={artifact.id || `${artifact.name}-${artifact.artifact_path}`}>{artifact.name || artifact.artifact_type}</Badge>
+        ))}
+        {artifacts.length > 3 ? <Badge>+{artifacts.length - 3}</Badge> : null}
+      </div>
+    </div>
   );
 }
 
@@ -2827,6 +2879,33 @@ function downloadUrl(release: AppRelease, absolute = false) {
   const url = release.download_url || `/admin/api/app-releases/${encodeURIComponent(release.id)}/download`;
   if (!absolute || /^https?:\/\//i.test(url)) return url;
   return `${window.location.origin}${url.startsWith("/") ? url : `/${url}`}`;
+}
+
+function buildArtifacts(job: AppReleaseBuildJob): AppBuildArtifact[] {
+  if (job.artifacts?.length) return job.artifacts;
+  if (!job.artifact_type && !job.artifact_path && !job.file_name) return [];
+  return [
+    {
+      id: `${job.id}-primary`,
+      build_id: job.id,
+      name: job.artifact_type || "primary",
+      artifact_type: job.artifact_type || "artifact",
+      artifact_path: job.artifact_path,
+      file_name: job.file_name,
+      size_bytes: job.artifact_size,
+      sha256: job.sha256,
+      created_at: job.finished_at || job.created_at,
+    },
+  ];
+}
+
+function sumArtifactSize(artifacts: AppBuildArtifact[]) {
+  return artifacts.reduce((total, artifact) => total + (artifact.size_bytes ?? 0), 0);
+}
+
+function shortHash(value?: string) {
+  if (!value) return "-";
+  return value.length > 12 ? `${value.slice(0, 12)}...` : value;
 }
 
 function formatBytes(value?: number) {
