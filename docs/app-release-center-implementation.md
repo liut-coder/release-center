@@ -17,7 +17,7 @@
 | 资源安全 | 增量资源白名单、ZIP 内容校验、禁止执行代码、SHA-256、文件大小校验和 Manifest Ed25519 签名已落地 |
 | 自动保护 | `activation_failed` 会自动暂停匹配资源版本，写入 `paused_at` 并记录 `resource.auto_pause` 审计 |
 | 质量观察 | overview API 输出 `quality_metrics`、`quality_policy`、`quality_alerts`；Web 统计页展示成功率、失败率、失败原因、阈值、策略建议和质量告警 |
-| 本机验证 | `go test ./...`、`go build -buildvcs=false ./cmd/server ./cmd/releasectl ./cmd/migrate`、`cd web && npm run smoke:browser` 已通过；无数据库 Demo store 已覆盖系统管理和 App 发版中心写入闭环；浏览器 smoke 覆盖桌面/移动 Chromium、登录、RBAC 菜单裁剪、系统页、用户创建和启停、角色创建和启停、权限创建和启停、字典创建和启停、菜单创建和显隐、App 发版中心关键标签页、App 创建和启停、构建创建、发布草稿创建、发布/暂停/灰度/编辑说明、资源 ZIP 上传创建、资源发布/暂停/灰度/编辑说明、操作审计可搜索留痕、运行时错误监听和页面横向溢出检查；真实 DB smoke 覆盖迁移、发布、资源发布、检查更新和自动暂停 |
+| 本机验证 | `go test ./...`、`go build -buildvcs=false ./cmd/server ./cmd/releasectl ./cmd/migrate`、`cd web && npm run smoke:browser` 已通过；无数据库 Demo store 已覆盖系统管理和 App 发版中心写入闭环；浏览器 smoke 覆盖桌面/移动 Chromium、登录、RBAC 菜单裁剪、系统页、用户创建和启停、角色创建和启停、权限创建和启停、字典创建和启停、菜单创建和显隐、App 发版中心关键标签页、App 创建和启停、构建创建、发布草稿创建、发布/撤回/回滚/下架/暂停/灰度/编辑说明、资源 ZIP 上传创建、资源发布/回滚/暂停/灰度/编辑说明、操作审计可搜索留痕、运行时错误监听和页面横向溢出检查；真实 DB smoke 覆盖迁移、发布、资源发布、检查更新和自动暂停 |
 | 外部待验收 | 生产 18080 migration/重启、系统管理真实 PostgreSQL 环境 smoke、生产环境浏览器 smoke、真实 APK Android 安装升级 smoke、真实资源 Android 下载/验签/激活/回滚 smoke 仍需继续推进 |
 
 ## 当前项目推进与优化点
@@ -72,8 +72,9 @@
 - 浏览器 smoke 新增系统管理用户、角色、权限、数据字典和菜单创建流程，覆盖桌面和移动视口。
 - 浏览器 smoke 新增系统管理用户、角色、权限、数据字典的启停操作，以及菜单显示/隐藏操作。
 - 浏览器 smoke 新增 App 管理创建、停用和启用流程，并通过稳定 `app-row-${app_key}` 标识定位新建应用行。
-- 浏览器 smoke 新增 App 发布草稿的发布、灰度、编辑说明、暂停操作，以及资源版本的发布、灰度、编辑说明、暂停操作。
-- 浏览器 smoke 新增操作审计页验证，按 App 版本号和资源版本号搜索刚执行的创建、发布、灰度、编辑说明、暂停审计记录。
+- 浏览器 smoke 新增 App 发布草稿的发布、灰度、编辑说明、撤回、回滚、下架、再次发布和暂停操作，以及资源版本的发布、灰度、编辑说明、回滚和暂停操作。
+- 浏览器 smoke 新增操作审计页验证，按 App 版本号和资源版本号搜索刚执行的创建、发布、灰度、编辑说明、撤回、回滚、下架和暂停审计记录。
+- 操作审计页补齐 `release.unpublish` 中文标签，避免下架操作在页面中显示原始 action 字符串。
 - 后端发布和资源状态操作审计 metadata 已补充版本、渠道、标题、灰度和状态字段，便于后台审计页检索与交接追溯。
 - App 构建创建成功后，发布草稿表单会自动选中刚创建的成功构建并同步渠道，避免用户连续创建构建和发布时误选旧构建。
 - 后端 Demo role 创建会把空权限标准化为 `[]`，避免返回 `permissions:null`。
@@ -155,7 +156,7 @@ cd web && npm run build
 cd web && npm run smoke:browser
 ```
 
-该命令会先构建 `web/dist`，再启动 Go server 托管生产产物。未配置 `DATABASE_URL` 时，server 会使用进程内 Demo store；浏览器 smoke 会用 Chromium 桌面和移动视口验证登录、RBAC 菜单裁剪、系统管理页、App 发版中心概览 / 构建记录 / App 发布 / 资源增量 / 设备版本 / 升级统计 / 升级事件 / 操作审计、App 创建和启停、构建创建、发布草稿创建、合法资源 ZIP 上传创建、控制台错误、页面错误、Admin/API 5xx 和页面横向溢出。
+该命令会先构建 `web/dist`，再启动 Go server 托管生产产物。未配置 `DATABASE_URL` 时，server 会使用进程内 Demo store；浏览器 smoke 会用 Chromium 桌面和移动视口验证登录、RBAC 菜单裁剪、系统管理页、App 发版中心概览 / 构建记录 / App 发布 / 资源增量 / 设备版本 / 升级统计 / 升级事件 / 操作审计、App 创建和启停、构建创建、发布草稿创建、发布/撤回/回滚/下架/暂停、资源 ZIP 上传创建、资源发布/回滚/暂停、控制台错误、页面错误、Admin/API 5xx 和页面横向溢出。
 
 构建产物位于 `web/dist`。`cmd/server` 默认通过 `WEB_DIST=web/dist` 托管后台页面，`GET /` 返回管理控制台；API 路径 `/api/*` 和 `/admin/api/*` 不会被 SPA fallback 抢占。
 

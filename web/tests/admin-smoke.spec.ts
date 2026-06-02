@@ -263,6 +263,34 @@ async function operateDemoRelease(page: Page, releaseRow: Locator, updatedTitle:
   await expect(releaseRow.getByText(updatedTitle)).toBeVisible();
   await expectNoPageOverflow(page);
 
+  await releaseRow.getByRole("button", { name: "撤回", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "撤回版本" })).toBeVisible();
+  await page.getByRole("button", { name: "确认撤回" }).click();
+  await expect(page.getByText("版本已撤回")).toBeVisible();
+  await expect(releaseRow.getByText("已撤回").first()).toBeVisible();
+  await expectNoPageOverflow(page);
+
+  await releaseRow.getByRole("button", { name: "回滚", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "回滚版本" })).toBeVisible();
+  await page.getByRole("button", { name: "确认回滚" }).click();
+  await expect(page.getByText("已回滚到选定版本")).toBeVisible();
+  await expect(releaseRow.getByText("已发布").first()).toBeVisible();
+  await expectNoPageOverflow(page);
+
+  await releaseRow.getByRole("button", { name: "下架", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "下架版本" })).toBeVisible();
+  await page.getByRole("button", { name: "确认下架" }).click();
+  await expect(page.getByText("版本已下架")).toBeVisible();
+  await expect(releaseRow.getByText("已撤回").first()).toBeVisible();
+  await expectNoPageOverflow(page);
+
+  await releaseRow.getByRole("button", { name: "发布", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "发布版本" })).toBeVisible();
+  await page.getByRole("button", { name: "确认发布" }).click();
+  await expect(page.getByText("发布状态已更新")).toBeVisible();
+  await expect(releaseRow.getByText("已发布").first()).toBeVisible();
+  await expectNoPageOverflow(page);
+
   await releaseRow.getByRole("button", { name: "暂停", exact: true }).click();
   await expect(page.getByRole("heading", { name: "暂停发布" })).toBeVisible();
   await page.getByRole("button", { name: "确认暂停" }).click();
@@ -297,6 +325,13 @@ async function operateDemoResource(page: Page, resourceRow: Locator, updatedTitl
   await expect(resourceRow.getByText(updatedTitle)).toBeVisible();
   await expectNoPageOverflow(page);
 
+  await resourceRow.getByRole("button", { name: "回滚", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "回滚资源版本" })).toBeVisible();
+  await page.getByRole("button", { name: "确认回滚" }).click();
+  await expect(page.getByText("资源指针已回滚")).toBeVisible();
+  await expect(resourceRow.getByText("已发布").first()).toBeVisible();
+  await expectNoPageOverflow(page);
+
   await resourceRow.getByRole("button", { name: "暂停", exact: true }).click();
   await expect(page.getByRole("heading", { name: "暂停资源版本" })).toBeVisible();
   await page.getByRole("button", { name: "确认暂停" }).click();
@@ -315,6 +350,9 @@ async function verifyAuditTrail(page: Page, versionName: string, resourceVersion
   await expect(page.getByRole("cell", { name: "发布版本" }).first()).toBeVisible();
   await expect(page.getByRole("cell", { name: "调整灰度" }).first()).toBeVisible();
   await expect(page.getByRole("cell", { name: "更新版本说明" }).first()).toBeVisible();
+  await expect(page.getByRole("cell", { name: "撤回版本" }).first()).toBeVisible();
+  await expect(page.getByRole("cell", { name: "回滚版本" }).first()).toBeVisible();
+  await expect(page.getByRole("cell", { name: "下架版本" }).first()).toBeVisible();
   await expect(page.getByRole("cell", { name: "暂停发布" }).first()).toBeVisible();
   await expectNoPageOverflow(page);
 
@@ -323,6 +361,7 @@ async function verifyAuditTrail(page: Page, versionName: string, resourceVersion
   await expect(page.getByRole("cell", { name: "发布资源" }).first()).toBeVisible();
   await expect(page.getByRole("cell", { name: "调整资源灰度" }).first()).toBeVisible();
   await expect(page.getByRole("cell", { name: "更新资源说明" }).first()).toBeVisible();
+  await expect(page.getByRole("cell", { name: "回滚资源" }).first()).toBeVisible();
   await expect(page.getByRole("cell", { name: "暂停资源" }).first()).toBeVisible();
   await expectNoPageOverflow(page);
 }
