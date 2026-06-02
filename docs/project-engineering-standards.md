@@ -1,0 +1,243 @@
+# 项目工程规范
+
+更新时间：2026-06-02
+
+本文用于约束发布中心后续研发方式。目标是让代码优雅、易扩展、方便调试、性能可控，并且每个功能点和里程碑都有清晰 Git 留痕。
+
+## 1. 总体原则
+
+1. 优先保持系统边界清晰：项目、制品、发布、部署、观测、审计、系统管理各自独立演进。
+2. 优先复用现有模式：Go 后端沿用 service / store / handler 分层，前端沿用 `api/`、`pages/`、`components/` 组织。
+3. 先做可验证闭环，再做抽象扩展。抽象必须服务真实复用，不能为了“看起来通用”增加复杂度。
+4. 代码默认可测试、可观测、可回滚。新功能要能说明如何验证，失败时要能定位。
+5. 每完成一个功能点或里程碑就提交一次 Git commit，避免大量无边界改动混在一起。
+
+## 2. 代码优雅
+
+后端：
+
+- Handler 只负责 HTTP 参数解析、认证上下文传递和响应，不写复杂业务规则。
+- Service 负责业务流程、状态流转、校验和审计触发。
+- Store / Repository 负责持久化，不把 HTTP 结构泄露到数据库层。
+- Model / DTO 命名要表达业务含义，避免 `Data`、`Info`、`Tmp` 这类模糊名字。
+- 错误要包含稳定 code 和可读 message，外部响应不要暴露数据库细节。
+- 状态流转要集中管理，避免多个 handler 各自拼状态字符串。
+
+前端：
+
+- 页面负责组合数据和交互，通用控件放 `components/`。
+- API 调用集中放 `web/src/api/`，页面不直接散写 fetch。
+- UI 状态要区分 loading、empty、error、success。
+- 表格、弹窗、确认框、危险操作按钮要保持一致交互。
+- 不在页面里硬编码大量 mock 数据；mock 应集中管理，并标注后续真实 API 对接点。
+
+文档：
+
+- 每个模块至少有目标、边界、主要接口、验证方式。
+- 重要决策写入文档，不只留在聊天或临时备注里。
+- 文档要写清楚当前状态：已完成、待验收、待实现。
+
+## 3. 易扩展
+
+通用发布中心必须按发布类型扩展，而不是把所有能力塞进 App 发版模块：
+
+```text
+release_type:
+  android_full
+  android_resource
+  web_bundle
+  docs_site
+  server_binary
+  config_bundle
+  docker_image
+  cloudflare_worker
+```
+
+扩展要求：
+
+- 新发布类型优先复用 artifact、release、deployment、audit、quality 这几类通用对象。
+- 特定领域逻辑放到独立 adapter 或 service，不污染通用发布流程。
+- 数据库字段优先稳定结构；确实需要扩展时再用 `metadata JSONB`，不能所有核心字段都塞进 JSON。
+- API 路径按资源组织，不按页面组织。
+- 后台菜单按项目、制品、发布、部署、观测、审计、系统管理组织，App 更新只是一个发布类型。
+
+新增模块时至少回答：
+
+```text
+它属于哪个边界？
+是否能复用已有表和 API？
+状态流转是什么？
+如何审计？
+如何验证？
+如何回滚？
+```
+
+## 4. 方便调试
+
+后端调试要求：
+
+- 每个请求要有 request_id，日志和错误响应中能关联。
+- 关键操作必须记录 actor、action、target_type、target_id。
+- 外部 CI、Webhook、部署回调要保存原始摘要和失败原因。
+- 长流程要拆出步骤日志，例如上传、校验、创建发布、发布、部署回调。
+- 错误信息要区分用户可修复错误和系统错误。
+
+前端调试要求：
+
+- API 错误页面展示 message、code、request_id。
+- 重要操作前有确认摘要，失败后保留用户输入。
+- 页面状态不应静默失败，至少展示错误提示和重试入口。
+- 开发环境可以启用 mock，但页面上要能区分 mock 和真实数据。
+
+运维调试要求：
+
+- 服务必须提供 `/healthz` 和 `/readyz`。
+- 生产部署文档要包含启动命令、环境变量、日志位置、迁移命令和回滚步骤。
+- Smoke 脚本要能复跑，并说明依赖的环境变量。
+
+## 5. 性能要求
+
+后端：
+
+- 列表接口必须分页，默认限制返回数量。
+- 常用查询要有索引，尤其是 tenant、app/project、status、created_at、event_time。
+- 大文件上传和下载不能经过不必要的内存拷贝。
+- ZIP 校验要限制文件数量、单文件大小、总大小和压缩炸弹风险。
+- 质量统计要避免每次全表扫描；数据量上来后需要按时间窗口或预聚合优化。
+- 外部调用必须有 timeout，不能无限等待 CI、Webhook 或部署平台。
+
+前端：
+
+- 大表格要分页或虚拟列表，避免一次渲染过多行。
+- 轮询要有间隔、停止条件和页面隐藏处理。
+- 页面初始加载只请求首屏必要数据。
+- 打包产物要避免无意义大依赖，新增依赖前说明用途。
+
+数据库：
+
+- Migration 必须可重复执行或明确只执行一次。
+- 高风险 migration 要先写回滚方案。
+- 不在高频路径使用无索引模糊查询。
+
+## 6. 测试和验证
+
+每个功能点至少满足一种验证：
+
+- 单元测试：业务规则、状态流转、校验逻辑。
+- Handler 测试：请求参数、认证、响应格式。
+- Store 测试：关键 SQL、迁移、约束。
+- 前端构建：`cd web && npm run build`。
+- 后端测试：`go test ./...`。
+- Smoke：真实 DB、发布、下载、事件、自动暂停等闭环。
+
+推荐提交前检查：
+
+```bash
+go test ./...
+go build -buildvcs=false ./cmd/server ./cmd/releasectl ./cmd/migrate
+cd web && npm run build
+make smoke-db
+```
+
+如果某项没有运行，提交说明或交付说明里要写清楚原因。
+
+## 7. Git 提交规范
+
+### 7.1 提交频率
+
+必须按功能点或里程碑提交：
+
+- 完成一个独立功能点后提交。
+- 完成一个可验证里程碑后提交。
+- 完成一次文档方案调整后提交。
+- 修复一个明确 bug 后提交。
+
+不要把无关改动混在一个 commit 中。例如 RBAC schema、前端菜单重构、资源上传 bug 修复应拆成不同提交。
+
+### 7.2 提交格式
+
+统一使用 Conventional Commits 风格：
+
+```text
+<type>(optional-scope): <summary>
+```
+
+常用 type：
+
+```text
+feat      新功能
+fix       修复 bug
+docs      文档
+refactor  重构，不改变外部行为
+test      测试
+perf      性能优化
+chore     构建、依赖、脚手架、杂项
+ci        CI/CD 配置
+style     纯格式调整
+```
+
+示例：
+
+```text
+feat(rbac): add role permission persistence
+fix(release): reject resource package with hidden files
+docs(plan): update multi-artifact release roadmap
+perf(events): add indexes for quality metrics queries
+test(appreleases): cover activation failed auto pause
+```
+
+### 7.3 提交内容要求
+
+每个 commit 应满足：
+
+- 标题说明“做了什么”，不要只写 `update`、`fix`、`wip`。
+- 只包含一个主题。
+- 代码和文档同步更新。
+- 能通过对应层级验证，或明确说明未验证原因。
+- 不提交本地临时文件、日志、密钥、构建缓存。
+
+### 7.4 推荐提交节奏
+
+RBAC 里程碑示例：
+
+```text
+docs(rbac): define system management scope
+feat(rbac): add users roles permissions migrations
+feat(rbac): add system management admin APIs
+feat(rbac): enforce admin permission middleware
+feat(web): connect system management pages to APIs
+test(rbac): cover role permission checks
+```
+
+通用发布中心里程碑示例：
+
+```text
+docs(plan): define generic release center milestones
+feat(release): add generic artifact model
+feat(release): add deployment target records
+feat(web): replace app-only navigation with release center sections
+test(release): cover deployment callback flow
+```
+
+## 8. 分支和 Push 规范
+
+- `main` 保持可构建、可运行、文档一致。
+- 大功能建议使用短生命周期分支，完成后合并。
+- 直接推 `main` 时必须确保工作区干净、提交主题清晰。
+- Push 前至少执行 `git status` 和必要验证命令。
+- 遇到远端有更新，先 `git pull --rebase`，解决冲突后再 push。
+
+## 9. 评审清单
+
+合并或交付前检查：
+
+- 是否符合模块边界？
+- 是否有不必要的重复或过度抽象？
+- 是否有测试或 smoke 验证？
+- 是否记录审计？
+- 是否有可定位错误信息？
+- 是否考虑分页、索引、timeout、文件大小限制？
+- 是否更新相关文档？
+- 是否按功能点提交？
+
+这份规范后续如果和实际工程冲突，以更安全、更可验证、更易维护的做法为准，并同步更新本文。
