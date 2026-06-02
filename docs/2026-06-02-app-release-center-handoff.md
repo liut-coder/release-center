@@ -2,6 +2,35 @@
 
 更新时间：2026-06-02
 
+## 0. 当前交接快照
+
+```text
+仓库路径：/root/release-center
+当前分支：main
+最新功能提交：8a20c09 test(web): cover release lifecycle smoke
+当前状态：前后端 demo 闭环已可本地验收，生产 PostgreSQL、生产 token 映射和 Android 真机链路仍待外部环境复验
+是否已推送：交接完成时应以 git log / origin/main 为准；本轮交接会在 docs commit 后统一 push
+```
+
+本轮最后一次本地验证已通过：
+
+```bash
+git diff --check
+go test ./...
+go build -buildvcs=false ./cmd/server ./cmd/releasectl ./cmd/migrate
+cd web && npm run build
+cd web && npm run smoke:browser
+```
+
+`npm run smoke:browser` 已通过 Chromium 桌面和移动共 4 个用例，覆盖登录、RBAC 菜单裁剪、系统管理写入/启停/显隐、App 管理创建/启停、构建创建、发布草稿、发布/撤回/回滚/下架/暂停/灰度/编辑说明、资源 ZIP 创建、资源发布/回滚/暂停/灰度/编辑说明、操作审计检索、控制台错误、页面错误、API 5xx 和页面横向溢出检查。
+
+接手后优先处理：
+
+1. 在生产 18080 真实 `DATABASE_URL` 环境执行 migration、重启服务并复跑健康检查。
+2. 在真实 PostgreSQL 和生产 token 映射下复跑后台浏览器 smoke，重点验 RBAC 403、菜单裁剪和数据持久化。
+3. Android 真机发版链路暂缓，但后续必须补 APK 安装升级、资源下载验签、激活和失败回滚 smoke。
+4. 继续把页面从 App 专用能力扩展到通用发布中心，包括 Web dist、文档站、服务端二进制、Docker 镜像和配置包。
+
 ## 1. 结论
 
 当前 `/root/release-center` 已按 `docs/app-release-center-spec.md` 和 `docs/lightweight-release-center-plan.md` 推进到前后端主闭环状态：
