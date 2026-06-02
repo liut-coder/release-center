@@ -488,6 +488,7 @@ type CreateArtifactRequest struct {
 	RunID        string `json:"run_id"`
 	BuildURL     string `json:"build_url"`
 	ReleaseNotes string `json:"release_notes"`
+	StorageKey   string `json:"-"`
 }
 
 type CreateAppRequest struct {

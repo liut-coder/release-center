@@ -316,6 +316,16 @@ func (s *PostgresStore) CreateBuild(ctx context.Context, build AppBuildJob, cfg 
 	if err != nil {
 		return AppBuildJob{}, err
 	}
+	if build.StorageKey != "" {
+		build.ArtifactPath = "/api/v1/app/builds/" + build.ID + "/download"
+		if _, err := tx.Exec(ctx, `
+			update app_builds
+			set artifact_path = $2
+			where id = $1 and tenant_id = 'default'
+		`, build.ID, build.ArtifactPath); err != nil {
+			return AppBuildJob{}, err
+		}
+	}
 	if err := tx.Commit(ctx); err != nil {
 		return AppBuildJob{}, err
 	}

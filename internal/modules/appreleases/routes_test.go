@@ -109,3 +109,58 @@ func TestRoutesWithOptionsProtectsCIEndpoints(t *testing.T) {
 		t.Fatalf("expected CI endpoint to require token, got %d", rec.Code)
 	}
 }
+
+func TestRoutesExposeBuildDownloadEndpoints(t *testing.T) {
+	handler := NewHandler(NewService(Config{}))
+	routes := handler.Routes()
+
+	for _, path := range []string{
+		"/api/v1/app/builds/build-1/download",
+		"/api/v1/apps/builds/build-1/download",
+	} {
+		t.Run(path, func(t *testing.T) {
+			rec := httptest.NewRecorder()
+			req := httptest.NewRequest(http.MethodGet, path, nil)
+			routes.ServeHTTP(rec, req)
+			if rec.Code == http.StatusNotFound {
+				t.Fatalf("expected build download route to be mounted, got 404")
+			}
+		})
+	}
+}
+
+func TestContentTypeForFile(t *testing.T) {
+	for _, tc := range []struct {
+		fileName string
+		want     string
+	}{
+		{fileName: "app.apk", want: "application/vnd.android.package-archive"},
+		{fileName: "web-dist.tar.gz", want: "application/gzip"},
+		{fileName: "bundle.zip", want: "application/zip"},
+		{fileName: "manifest.json", want: "application/json; charset=utf-8"},
+	} {
+		t.Run(tc.fileName, func(t *testing.T) {
+			if got := contentTypeForFile(tc.fileName); got != tc.want {
+				t.Fatalf("contentTypeForFile(%q) = %q, want %q", tc.fileName, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestNormalizeArtifactTypeSupportsBuildCenterArtifacts(t *testing.T) {
+	for _, artifactType := range []string{
+		"apk",
+		"aab",
+		"zip",
+		"web_dist",
+		"binary",
+		"docker_image",
+		"artifact",
+	} {
+		t.Run(artifactType, func(t *testing.T) {
+			if got := normalizeArtifactType(artifactType); got != artifactType {
+				t.Fatalf("normalizeArtifactType(%q) = %q, want %q", artifactType, got, artifactType)
+			}
+		})
+	}
+}

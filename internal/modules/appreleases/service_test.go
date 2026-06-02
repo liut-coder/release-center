@@ -277,6 +277,47 @@ func TestCreateBuildDefaultsBuildNumberToVersionCode(t *testing.T) {
 	}
 }
 
+func TestCreateArtifactUsesRequestedAppAndStorageKey(t *testing.T) {
+	store := &captureBuildStore{}
+	service := NewServiceWithStore(Config{AppKey: "default-app"}, store)
+
+	resp, err := service.CreateArtifact(context.Background(), CreateArtifactRequest{
+		AppKey:       "release-center",
+		GitRef:       "main",
+		GitCommit:    "abcdef123456",
+		GitBranch:    "main",
+		Channel:      "dev",
+		BuildType:    "release",
+		VersionName:  "0.1.0",
+		VersionCode:  100,
+		BuildNumber:  1,
+		ArtifactType: "docker_image",
+		FileName:     "image-metadata.json",
+		SizeBytes:    1234,
+		SHA256:       "sha256-value",
+		Provider:     "build-center-local",
+		Workflow:     "single-machine-image-build",
+		RunID:        "run-1",
+		StorageKey:   "app-releases/artifacts/image-metadata.json",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if resp.Job.ArtifactType != "docker_image" || store.build.ArtifactType != "docker_image" {
+		t.Fatalf("expected docker image artifact type, got resp=%+v store=%+v", resp.Job, store.build)
+	}
+	if store.cfg.AppKey != "release-center" {
+		t.Fatalf("expected artifact app_key to select release-center app, got %+v", store.cfg)
+	}
+	if store.build.StorageKey != "app-releases/artifacts/image-metadata.json" {
+		t.Fatalf("expected storage key to reach store, got %+v", store.build)
+	}
+	if store.build.ArtifactPath != "/api/v1/app/builds/"+store.build.ID+"/download" {
+		t.Fatalf("expected storage-backed download path, got %+v", store.build)
+	}
+}
+
 func TestAdminOverviewAppliesConfiguredQualityPolicy(t *testing.T) {
 	store := &captureBuildStore{
 		adminOverview: AdminOverview{

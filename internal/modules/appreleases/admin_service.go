@@ -362,6 +362,7 @@ func (s *Service) CreateArtifact(ctx context.Context, req CreateArtifactRequest)
 		FileName:     req.FileName,
 		ArtifactSize: req.SizeBytes,
 		SHA256:       req.SHA256,
+		StorageKey:   req.StorageKey,
 		Provider:     req.Provider,
 		Workflow:     req.Workflow,
 		RunID:        req.RunID,
@@ -625,7 +626,7 @@ func normalizeBuildStatus(value string) string {
 
 func normalizeArtifactType(value string) string {
 	switch strings.TrimSpace(value) {
-	case "apk", "aab", "zip", "web_dist", "artifact":
+	case "apk", "aab", "zip", "web_dist", "binary", "docker_image", "artifact":
 		return strings.TrimSpace(value)
 	default:
 		return "apk"

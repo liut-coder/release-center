@@ -6,7 +6,9 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"io"
+	"mime"
 	"net/http"
+	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -429,30 +431,11 @@ func (h *Handler) createCIArtifactMultipart(w http.ResponseWriter, r *http.Reque
 	req.FileName = header.Filename
 	req.SizeBytes = size
 	req.SHA256 = hex.EncodeToString(sum[:])
+	req.StorageKey = storageKey
 	if req.Provider == "" {
 		req.Provider = "ci"
 	}
-	resp, err := h.service.CreateBuild(r.Context(), CreateBuildRequest{
-		GitRef:       req.GitRef,
-		GitCommit:    req.GitCommit,
-		GitBranch:    req.GitBranch,
-		BuildType:    req.BuildType,
-		Channel:      req.Channel,
-		VersionName:  req.VersionName,
-		VersionCode:  req.VersionCode,
-		BuildNumber:  req.BuildNumber,
-		APIBaseURL:   req.BuildURL,
-		ReleaseNotes: req.ReleaseNotes,
-		ArtifactType: req.ArtifactType,
-		FileName:     req.FileName,
-		ArtifactSize: req.SizeBytes,
-		SHA256:       req.SHA256,
-		Provider:     req.Provider,
-		Workflow:     req.Workflow,
-		RunID:        req.RunID,
-		StartedBy:    req.Provider,
-		StorageKey:   storageKey,
-	})
+	resp, err := h.service.CreateArtifact(r.Context(), req)
 	if err != nil {
 		httpx.Error(w, r, http.StatusBadRequest, "app_release.artifact_failed", "构建产物登记失败", map[string]any{"error": err.Error()})
 		return
@@ -607,7 +590,7 @@ func (h *Handler) DownloadBuild(w http.ResponseWriter, r *http.Request) {
 		httpx.Error(w, r, http.StatusNotFound, "app_release.build_file_not_found", "构建文件不存在", map[string]any{"error": err.Error()})
 		return
 	}
-	h.serveBlob(w, r, storageKey, fileName, "application/vnd.android.package-archive")
+	h.serveBlob(w, r, storageKey, fileName, contentTypeForFile(fileName))
 }
 
 func (h *Handler) CreateResourceVersion(w http.ResponseWriter, r *http.Request) {
@@ -719,6 +702,26 @@ func (h *Handler) serveBlob(w http.ResponseWriter, r *http.Request, storageKey, 
 	w.Header().Set("Content-Type", contentType)
 	w.Header().Set("Content-Disposition", `attachment; filename="`+strings.ReplaceAll(fileName, `"`, "")+`"`)
 	_, _ = io.Copy(w, body)
+}
+
+func contentTypeForFile(fileName string) string {
+	ext := strings.ToLower(filepath.Ext(fileName))
+	switch ext {
+	case ".apk":
+		return "application/vnd.android.package-archive"
+	case ".aab":
+		return "application/octet-stream"
+	case ".zip":
+		return "application/zip"
+	case ".gz", ".tgz":
+		return "application/gzip"
+	case ".json":
+		return "application/json; charset=utf-8"
+	}
+	if contentType := mime.TypeByExtension(ext); contentType != "" {
+		return contentType
+	}
+	return "application/octet-stream"
 }
 
 func webhookEventFromRequest(provider string, r *http.Request, payload map[string]any) WebhookEventRequest {
