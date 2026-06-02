@@ -8,8 +8,9 @@
 仓库路径：/root/release-center
 当前分支：main
 最新功能提交：8a20c09 test(web): cover release lifecycle smoke
+最新交接提交：6d59669 docs(handoff): refresh release center handoff
 当前状态：前后端 demo 闭环已可本地验收，生产 PostgreSQL、生产 token 映射和 Android 真机链路仍待外部环境复验
-是否已推送：交接完成时应以 git log / origin/main 为准；本轮交接会在 docs commit 后统一 push
+是否已推送：已推送到 origin/main，HEAD 与 origin/main 均为 6d59669
 ```
 
 本轮最后一次本地验证已通过：
