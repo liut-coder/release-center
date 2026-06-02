@@ -175,6 +175,8 @@ async function submitDemoReleaseForms(page: Page) {
   await expect(resourceRow.getByText(resourceVersion).first()).toBeVisible();
   await expectNoPageOverflow(page);
   await operateDemoResource(page, resourceRow, updatedResourceTitle);
+
+  await verifyAuditTrail(page, versionName, resourceVersion);
 }
 
 async function operateDemoRelease(page: Page, releaseRow: Locator, updatedTitle: string) {
@@ -242,6 +244,28 @@ async function operateDemoResource(page: Page, resourceRow: Locator, updatedTitl
   await page.getByRole("button", { name: "确认暂停" }).click();
   await expect(page.getByText("资源版本已暂停")).toBeVisible();
   await expect(resourceRow.getByText("已暂停").first()).toBeVisible();
+  await expectNoPageOverflow(page);
+}
+
+async function verifyAuditTrail(page: Page, versionName: string, resourceVersion: string) {
+  await releaseTab(page, "操作审计").click();
+  await expect(page.getByRole("heading", { name: "App 发布" })).toBeVisible();
+  await expect(page.getByPlaceholder("搜索操作人 / 动作 / 对象")).toBeVisible();
+
+  await page.getByPlaceholder("搜索操作人 / 动作 / 对象").fill(versionName);
+  await expect(page.getByRole("cell", { name: "创建发布" }).first()).toBeVisible();
+  await expect(page.getByRole("cell", { name: "发布版本" }).first()).toBeVisible();
+  await expect(page.getByRole("cell", { name: "调整灰度" }).first()).toBeVisible();
+  await expect(page.getByRole("cell", { name: "更新版本说明" }).first()).toBeVisible();
+  await expect(page.getByRole("cell", { name: "暂停发布" }).first()).toBeVisible();
+  await expectNoPageOverflow(page);
+
+  await page.getByPlaceholder("搜索操作人 / 动作 / 对象").fill(resourceVersion);
+  await expect(page.getByRole("cell", { name: "创建资源" }).first()).toBeVisible();
+  await expect(page.getByRole("cell", { name: "发布资源" }).first()).toBeVisible();
+  await expect(page.getByRole("cell", { name: "调整资源灰度" }).first()).toBeVisible();
+  await expect(page.getByRole("cell", { name: "更新资源说明" }).first()).toBeVisible();
+  await expect(page.getByRole("cell", { name: "暂停资源" }).first()).toBeVisible();
   await expectNoPageOverflow(page);
 }
 

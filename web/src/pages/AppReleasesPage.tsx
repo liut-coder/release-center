@@ -2705,6 +2705,7 @@ function auditActionLabel(action: string) {
       "release.recall": "撤回版本",
       "release.rollback": "回滚版本",
       "release.rollout": "调整灰度",
+      "release.notes": "更新版本说明",
       "resource.create": "创建资源",
       "resource.publish": "发布资源",
       "resource.pause": "暂停资源",

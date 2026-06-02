@@ -439,7 +439,9 @@ func (s *Service) ReleaseAction(ctx context.Context, id, action string) (AdminAc
 		return AdminActionResponse{}, err
 	}
 	_ = s.store.InsertAudit(ctx, "release."+action, "app_release", release.ID, "更新 App 发布状态", map[string]any{
-		"status": status,
+		"version_name": release.VersionName,
+		"channel":      release.Channel,
+		"status":       status,
 	})
 	return AdminActionResponse{OK: true, Release: release, MessageZh: "发布状态已更新"}, nil
 }
@@ -450,6 +452,8 @@ func (s *Service) UpdateReleaseRollout(ctx context.Context, id string, req Updat
 		return AdminActionResponse{}, err
 	}
 	_ = s.store.InsertAudit(ctx, "release.rollout", "app_release", release.ID, "调整 App 发布灰度", map[string]any{
+		"version_name":       release.VersionName,
+		"channel":            release.Channel,
 		"rollout_percentage": release.RolloutPercentage,
 	})
 	return AdminActionResponse{OK: true, Release: release, MessageZh: "灰度比例已更新"}, nil
@@ -464,7 +468,11 @@ func (s *Service) UpdateReleaseNotes(ctx context.Context, id string, req UpdateN
 	if err != nil {
 		return AdminActionResponse{}, err
 	}
-	_ = s.store.InsertAudit(ctx, "release.notes", "app_release", release.ID, "更新 App 发布说明", nil)
+	_ = s.store.InsertAudit(ctx, "release.notes", "app_release", release.ID, "更新 App 发布说明", map[string]any{
+		"version_name": release.VersionName,
+		"channel":      release.Channel,
+		"title":        release.Title,
+	})
 	return AdminActionResponse{OK: true, Release: release, MessageZh: "发布说明已更新"}, nil
 }
 
@@ -563,7 +571,9 @@ func (s *Service) ResourceAction(ctx context.Context, id, action string) (Resour
 		return ResourceActionResponse{}, err
 	}
 	_ = s.store.InsertAudit(ctx, "resource."+action, "app_resource_version", resource.ID, "更新资源发布状态", map[string]any{
-		"status": status,
+		"resource_version": resource.ResourceVersion,
+		"channel":          resource.Channel,
+		"status":           status,
 	})
 	return ResourceActionResponse{OK: true, ResourceVersion: resource, MessageZh: "资源状态已更新"}, nil
 }
@@ -574,6 +584,8 @@ func (s *Service) UpdateResourceRollout(ctx context.Context, id string, req Upda
 		return ResourceActionResponse{}, err
 	}
 	_ = s.store.InsertAudit(ctx, "resource.rollout", "app_resource_version", resource.ID, "调整资源灰度", map[string]any{
+		"resource_version":   resource.ResourceVersion,
+		"channel":            resource.Channel,
 		"rollout_percentage": resource.RolloutPercentage,
 	})
 	return ResourceActionResponse{OK: true, ResourceVersion: resource, MessageZh: "资源灰度已更新"}, nil
@@ -588,7 +600,11 @@ func (s *Service) UpdateResourceNotes(ctx context.Context, id string, req Update
 	if err != nil {
 		return ResourceActionResponse{}, err
 	}
-	_ = s.store.InsertAudit(ctx, "resource.notes", "app_resource_version", resource.ID, "更新资源发布说明", nil)
+	_ = s.store.InsertAudit(ctx, "resource.notes", "app_resource_version", resource.ID, "更新资源发布说明", map[string]any{
+		"resource_version": resource.ResourceVersion,
+		"channel":          resource.Channel,
+		"title":            resource.Title,
+	})
 	return ResourceActionResponse{OK: true, ResourceVersion: resource, MessageZh: "资源说明已更新"}, nil
 }
 
