@@ -1,4 +1,5 @@
 import { useMemo, useState, type ReactNode } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   BookOpen,
   Database,
@@ -9,14 +10,33 @@ import {
   LogOut,
   Menu,
   Rocket,
-  Save,
   Search,
   Shield,
   SlidersHorizontal,
   Users,
 } from "lucide-react";
 import { getAppTokens, saveAppTokens } from "@/api/client";
+import {
+  createSystemDictionary,
+  createSystemMenu,
+  createSystemPermission,
+  createSystemRole,
+  createSystemUser,
+  getSystemManagement,
+  setSystemDictionaryEnabled,
+  setSystemMenuVisible,
+  setSystemPermissionEnabled,
+  setSystemRoleEnabled,
+  setSystemUserEnabled,
+  type SystemDictionary,
+  type SystemManagementOverview,
+  type SystemMenu,
+  type SystemPermission,
+  type SystemRole,
+  type SystemUser,
+} from "@/api/systemManagement";
 import { AppReleasesPage } from "@/pages/AppReleasesPage";
+import { ApiErrorState } from "@/components/stable/StableAdminComponents";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
@@ -26,55 +46,6 @@ import { Table, Td, Th } from "@/components/ui/Table";
 import { cn } from "@/lib/cn";
 
 type AdminPageKey = "dashboard" | "release-center" | "users" | "roles" | "permissions" | "dictionaries" | "menus";
-
-type UserRow = {
-  id: string;
-  name: string;
-  account: string;
-  role: string;
-  department: string;
-  status: "enabled" | "disabled";
-  lastLogin: string;
-};
-
-type RoleRow = {
-  id: string;
-  name: string;
-  code: string;
-  users: number;
-  scope: string;
-  permissions: string[];
-  enabled: boolean;
-};
-
-type PermissionRow = {
-  id: string;
-  name: string;
-  code: string;
-  module: string;
-  type: "menu" | "button" | "api";
-  enabled: boolean;
-};
-
-type DictionaryRow = {
-  id: string;
-  group: string;
-  key: string;
-  label: string;
-  value: string;
-  sort: number;
-  enabled: boolean;
-};
-
-type MenuRow = {
-  id: string;
-  title: string;
-  path: string;
-  icon: string;
-  parent: string;
-  sort: number;
-  visible: boolean;
-};
 
 const navigation: Array<{
   group: string;
@@ -99,40 +70,37 @@ const navigation: Array<{
   },
 ];
 
-const seedUsers: UserRow[] = [
-  { id: "u_001", name: "发布管理员", account: "release.admin", role: "发版管理员", department: "平台工程", status: "enabled", lastLogin: "2026-06-02 13:46" },
-  { id: "u_002", name: "测试负责人", account: "qa.lead", role: "测试负责人", department: "质量保障", status: "enabled", lastLogin: "2026-06-01 18:21" },
-  { id: "u_003", name: "观察员", account: "release.viewer", role: "只读观察员", department: "运营支持", status: "disabled", lastLogin: "2026-05-28 09:12" },
-];
+const SYSTEM_MANAGEMENT_QUERY_KEY = ["system-management"] as const;
 
-const seedRoles: RoleRow[] = [
-  { id: "r_001", name: "系统管理员", code: "system_admin", users: 2, scope: "全部数据", permissions: ["system:*", "release:*"], enabled: true },
-  { id: "r_002", name: "发版管理员", code: "release_admin", users: 4, scope: "发版数据", permissions: ["release:write", "release:audit"], enabled: true },
-  { id: "r_003", name: "只读观察员", code: "release_viewer", users: 8, scope: "只读数据", permissions: ["release:read"], enabled: true },
-];
+const emptySystemManagement: SystemManagementOverview = {
+  users: [],
+  roles: [],
+  permissions: [],
+  dictionaries: [],
+  menus: [],
+};
 
-const seedPermissions: PermissionRow[] = [
-  { id: "p_001", name: "查看首页", code: "dashboard:view", module: "工作台", type: "menu", enabled: true },
-  { id: "p_002", name: "管理发布", code: "release:write", module: "App 发版中心", type: "button", enabled: true },
-  { id: "p_003", name: "查看审计", code: "release:audit", module: "App 发版中心", type: "api", enabled: true },
-  { id: "p_004", name: "维护用户", code: "system:user:write", module: "系统管理", type: "button", enabled: true },
-  { id: "p_005", name: "维护菜单", code: "system:menu:write", module: "系统管理", type: "button", enabled: true },
-];
+type SystemManagementActions = {
+  pending: boolean;
+  error: unknown;
+  createUser: () => void;
+  setUserEnabled: (id: string, enabled: boolean) => void;
+  createRole: () => void;
+  setRoleEnabled: (id: string, enabled: boolean) => void;
+  createPermission: () => void;
+  setPermissionEnabled: (id: string, enabled: boolean) => void;
+  createDictionary: (group: string, sort: number) => void;
+  setDictionaryEnabled: (id: string, enabled: boolean) => void;
+  createMenu: (sort: number) => void;
+  setMenuVisible: (id: string, visible: boolean) => void;
+};
 
-const seedDictionaries: DictionaryRow[] = [
-  { id: "d_001", group: "release_channel", key: "stable", label: "正式渠道", value: "stable", sort: 10, enabled: true },
-  { id: "d_002", group: "release_channel", key: "beta", label: "Beta 渠道", value: "beta", sort: 20, enabled: true },
-  { id: "d_003", group: "resource_package", key: "templates-bear", label: "打熊识图模板", value: "templates-bear", sort: 30, enabled: true },
-  { id: "d_004", group: "audit_level", key: "critical", label: "关键操作", value: "critical", sort: 40, enabled: true },
-];
-
-const seedMenus: MenuRow[] = [
-  { id: "m_001", title: "首页", path: "/dashboard", icon: "LayoutDashboard", parent: "-", sort: 10, visible: true },
-  { id: "m_002", title: "App 发版中心", path: "/release-center", icon: "Rocket", parent: "工作台", sort: 20, visible: true },
-  { id: "m_003", title: "用户管理", path: "/system/users", icon: "Users", parent: "系统管理", sort: 30, visible: true },
-  { id: "m_004", title: "角色管理", path: "/system/roles", icon: "Shield", parent: "系统管理", sort: 40, visible: true },
-  { id: "m_005", title: "数据字典", path: "/system/dictionaries", icon: "Database", parent: "系统管理", sort: 50, visible: true },
-];
+type SystemPageRenderContext = {
+  system: SystemManagementOverview;
+  loading: boolean;
+  error: unknown;
+  actions: SystemManagementActions;
+};
 
 export function App() {
   const storedToken = getAppTokens().configToken;
@@ -143,12 +111,19 @@ export function App() {
   }));
   const [activePage, setActivePage] = useState<AdminPageKey>("dashboard");
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const systemQuery = useQuery({
+    queryKey: SYSTEM_MANAGEMENT_QUERY_KEY,
+    queryFn: getSystemManagement,
+    enabled: session.signedIn,
+  });
+  const systemActions = useSystemManagementActions();
 
   if (!session.signedIn) {
     return <LoginPage onLogin={(token, name) => setSession({ signedIn: true, token, name })} />;
   }
 
   const currentLabel = navigation.flatMap((group) => group.items).find((item) => item.key === activePage)?.label ?? "首页";
+  const system = systemQuery.data ?? emptySystemManagement;
 
   return (
     <main className="admin-shell min-h-screen bg-muted/30">
@@ -220,11 +195,99 @@ export function App() {
               </Button>
             </div>
           </header>
-          <div className="admin-content mx-auto max-w-[1600px] px-4 py-4 sm:px-6 lg:px-8">{renderPage(activePage, setActivePage)}</div>
+          <div className="admin-content mx-auto max-w-[1600px] px-4 py-4 sm:px-6 lg:px-8">
+            {renderPage(activePage, setActivePage, {
+              system,
+              loading: systemQuery.isLoading,
+              error: systemQuery.error,
+              actions: systemActions,
+            })}
+          </div>
         </section>
       </div>
     </main>
   );
+}
+
+function useSystemManagementActions(): SystemManagementActions {
+  const queryClient = useQueryClient();
+  const invalidateSystemManagement = () => queryClient.invalidateQueries({ queryKey: SYSTEM_MANAGEMENT_QUERY_KEY });
+  const mutationOptions = { onSuccess: invalidateSystemManagement };
+  const createUserMutation = useMutation({ mutationFn: createSystemUser, ...mutationOptions });
+  const userStatusMutation = useMutation({ mutationFn: ({ id, enabled }: { id: string; enabled: boolean }) => setSystemUserEnabled(id, enabled), ...mutationOptions });
+  const createRoleMutation = useMutation({ mutationFn: createSystemRole, ...mutationOptions });
+  const roleStatusMutation = useMutation({ mutationFn: ({ id, enabled }: { id: string; enabled: boolean }) => setSystemRoleEnabled(id, enabled), ...mutationOptions });
+  const createPermissionMutation = useMutation({ mutationFn: createSystemPermission, ...mutationOptions });
+  const permissionStatusMutation = useMutation({ mutationFn: ({ id, enabled }: { id: string; enabled: boolean }) => setSystemPermissionEnabled(id, enabled), ...mutationOptions });
+  const createDictionaryMutation = useMutation({ mutationFn: createSystemDictionary, ...mutationOptions });
+  const dictionaryStatusMutation = useMutation({ mutationFn: ({ id, enabled }: { id: string; enabled: boolean }) => setSystemDictionaryEnabled(id, enabled), ...mutationOptions });
+  const createMenuMutation = useMutation({ mutationFn: createSystemMenu, ...mutationOptions });
+  const menuVisibleMutation = useMutation({ mutationFn: ({ id, visible }: { id: string; visible: boolean }) => setSystemMenuVisible(id, visible), ...mutationOptions });
+  const mutations = [
+    createUserMutation,
+    userStatusMutation,
+    createRoleMutation,
+    roleStatusMutation,
+    createPermissionMutation,
+    permissionStatusMutation,
+    createDictionaryMutation,
+    dictionaryStatusMutation,
+    createMenuMutation,
+    menuVisibleMutation,
+  ];
+  const suffix = () => Date.now().toString(36);
+
+  return {
+    pending: mutations.some((mutation) => mutation.isPending),
+    error: mutations.find((mutation) => mutation.error)?.error,
+    createUser: () =>
+      createUserMutation.mutate({
+        name: "新用户",
+        account: `user.${suffix()}`,
+        role_code: "release_viewer",
+        department: "平台工程",
+        status: "enabled",
+      }),
+    setUserEnabled: (id, enabled) => userStatusMutation.mutate({ id, enabled }),
+    createRole: () =>
+      createRoleMutation.mutate({
+        name: "新角色",
+        code: `custom_role_${suffix()}`,
+        scope: "自定义数据",
+        permissions: [],
+        enabled: true,
+      }),
+    setRoleEnabled: (id, enabled) => roleStatusMutation.mutate({ id, enabled }),
+    createPermission: () =>
+      createPermissionMutation.mutate({
+        name: "新权限",
+        code: `custom:permission:${suffix()}`,
+        module: "系统管理",
+        type: "button",
+        enabled: true,
+      }),
+    setPermissionEnabled: (id, enabled) => permissionStatusMutation.mutate({ id, enabled }),
+    createDictionary: (group, sort) =>
+      createDictionaryMutation.mutate({
+        group: group || "custom_group",
+        key: `custom_key_${suffix()}`,
+        label: "新字典项",
+        value: "custom",
+        sort,
+        enabled: true,
+      }),
+    setDictionaryEnabled: (id, enabled) => dictionaryStatusMutation.mutate({ id, enabled }),
+    createMenu: (sort) =>
+      createMenuMutation.mutate({
+        title: "新菜单",
+        path: `/custom/${suffix()}`,
+        icon: "Settings",
+        parent: "系统管理",
+        sort,
+        visible: true,
+      }),
+    setMenuVisible: (id, visible) => menuVisibleMutation.mutate({ id, visible }),
+  };
 }
 
 function LoginPage({ onLogin }: { onLogin: (token: string, name: string) => void }) {
@@ -284,26 +347,33 @@ function NavButton({ active, icon: Icon, label, onClick }: { active: boolean; ic
   );
 }
 
-function renderPage(activePage: AdminPageKey, setActivePage: (page: AdminPageKey) => void) {
+function renderPage(activePage: AdminPageKey, setActivePage: (page: AdminPageKey) => void, context: SystemPageRenderContext) {
   if (activePage === "release-center") return <AppReleasesPage />;
-  if (activePage === "users") return <UsersPage />;
-  if (activePage === "roles") return <RolesPage />;
-  if (activePage === "permissions") return <PermissionsPage />;
-  if (activePage === "dictionaries") return <DictionariesPage />;
-  if (activePage === "menus") return <MenusPage />;
-  return <DashboardPage onOpen={setActivePage} />;
+  if (activePage === "users") return <UsersPage users={context.system.users} loading={context.loading} error={context.error} actions={context.actions} />;
+  if (activePage === "roles") return <RolesPage roles={context.system.roles} loading={context.loading} error={context.error} actions={context.actions} />;
+  if (activePage === "permissions") {
+    return <PermissionsPage permissions={context.system.permissions} loading={context.loading} error={context.error} actions={context.actions} />;
+  }
+  if (activePage === "dictionaries") {
+    return <DictionariesPage dictionaries={context.system.dictionaries} loading={context.loading} error={context.error} actions={context.actions} />;
+  }
+  if (activePage === "menus") return <MenusPage menus={context.system.menus} loading={context.loading} error={context.error} actions={context.actions} />;
+  return <DashboardPage system={context.system} loading={context.loading} error={context.error} onOpen={setActivePage} />;
 }
 
-function DashboardPage({ onOpen }: { onOpen: (page: AdminPageKey) => void }) {
+function DashboardPage({ system, loading, error, onOpen }: { system: SystemManagementOverview; loading: boolean; error: unknown; onOpen: (page: AdminPageKey) => void }) {
   const quickEntries: Array<{ label: string; value: string; page: AdminPageKey; icon: typeof Home }> = [
-    { label: "用户", value: String(seedUsers.length), page: "users", icon: Users },
-    { label: "角色", value: String(seedRoles.length), page: "roles", icon: Shield },
-    { label: "权限点", value: String(seedPermissions.length), page: "permissions", icon: KeyRound },
-    { label: "字典项", value: String(seedDictionaries.length), page: "dictionaries", icon: Database },
+    { label: "用户", value: loading ? "-" : String(system.users.length), page: "users", icon: Users },
+    { label: "角色", value: loading ? "-" : String(system.roles.length), page: "roles", icon: Shield },
+    { label: "权限点", value: loading ? "-" : String(system.permissions.length), page: "permissions", icon: KeyRound },
+    { label: "字典项", value: loading ? "-" : String(system.dictionaries.length), page: "dictionaries", icon: Database },
   ];
+  const recentUsers = system.users.slice(0, 3);
+  const menuCount = system.menus.length || navigation.flatMap((group) => group.items).length;
 
   return (
     <div className="grid gap-4">
+      {error ? <ApiErrorState error={error} title="系统管理数据读取失败" /> : null}
       <div className="grid gap-3 md:grid-cols-4">
         {quickEntries.map((item) => (
           <button key={item.label} className="rounded-lg border bg-white p-3 text-left transition hover:border-black" onClick={() => onOpen(item.page)}>
@@ -319,7 +389,7 @@ function DashboardPage({ onOpen }: { onOpen: (page: AdminPageKey) => void }) {
         <Card>
           <div className="mb-3 flex items-center justify-between">
             <div className="font-medium">系统模块</div>
-            <Badge>7 个菜单</Badge>
+            <Badge>{menuCount} 个菜单</Badge>
           </div>
           <div className="grid gap-2 md:grid-cols-2">
             {navigation.flatMap((group) => group.items).map((item) => (
@@ -336,13 +406,15 @@ function DashboardPage({ onOpen }: { onOpen: (page: AdminPageKey) => void }) {
         <Card>
           <div className="mb-3 font-medium">最近登录</div>
           <div className="grid gap-2">
-            {seedUsers.slice(0, 3).map((user) => (
+            {loading ? <SystemEmptyState label="正在读取登录记录" /> : null}
+            {!loading && recentUsers.length === 0 ? <SystemEmptyState label="暂无登录记录" /> : null}
+            {recentUsers.map((user) => (
               <div key={user.id} className="flex items-center justify-between gap-3 rounded-lg border p-2.5 text-xs">
                 <div className="min-w-0">
                   <div className="truncate font-medium">{user.name}</div>
                   <div className="truncate text-muted-foreground">{user.account}</div>
                 </div>
-                <span className="shrink-0 text-muted-foreground">{user.lastLogin.slice(5)}</span>
+                <span className="shrink-0 text-muted-foreground">{formatLastLogin(user).slice(5)}</span>
               </div>
             ))}
           </div>
@@ -352,16 +424,18 @@ function DashboardPage({ onOpen }: { onOpen: (page: AdminPageKey) => void }) {
   );
 }
 
-function UsersPage() {
-  const [users, setUsers] = useState(seedUsers);
+function UsersPage({ users, loading, error, actions }: { users: SystemUser[]; loading: boolean; error: unknown; actions: SystemManagementActions }) {
   const [query, setQuery] = useState("");
-  const rows = users.filter((user) => [user.name, user.account, user.role, user.department].join(" ").toLowerCase().includes(query.toLowerCase()));
+  const rows = users.filter((user) => [user.name, user.account, user.role, user.department ?? ""].join(" ").toLowerCase().includes(query.toLowerCase()));
 
   return (
     <SystemPageShell
       title="用户管理"
+      loading={loading}
+      error={error}
+      actionError={actions.error}
       actions={
-        <Button onClick={() => setUsers([{ id: `u_${Date.now()}`, name: "新用户", account: "new.user", role: "只读观察员", department: "平台工程", status: "enabled", lastLogin: "-" }, ...users])}>
+        <Button onClick={actions.createUser} disabled={actions.pending}>
           <Users className="mr-1.5 h-4 w-4" />
           新增用户
         </Button>
@@ -386,73 +460,76 @@ function UsersPage() {
               <Td>{user.name}</Td>
               <Td>{user.account}</Td>
               <Td>{user.role}</Td>
-              <Td>{user.department}</Td>
+              <Td>{user.department || "-"}</Td>
               <Td>
                 <Badge tone={user.status === "enabled" ? "success" : "warning"}>{user.status === "enabled" ? "启用" : "停用"}</Badge>
               </Td>
-              <Td>{user.lastLogin}</Td>
+              <Td>{formatLastLogin(user)}</Td>
               <Td>
                 <Button
                   variant="secondary"
                   size="sm"
-                  onClick={() =>
-                    setUsers((items) =>
-                      items.map((item) => (item.id === user.id ? { ...item, status: item.status === "enabled" ? "disabled" : "enabled" } : item)),
-                    )
-                  }
+                  disabled={actions.pending}
+                  onClick={() => actions.setUserEnabled(user.id, user.status !== "enabled")}
                 >
                   {user.status === "enabled" ? "停用" : "启用"}
                 </Button>
               </Td>
             </tr>
           ))}
+          {rows.length === 0 ? <EmptyTableRow colSpan={7} label={query ? "没有匹配的用户" : "暂无用户"} /> : null}
         </tbody>
       </Table>
     </SystemPageShell>
   );
 }
 
-function RolesPage() {
-  const [roles, setRoles] = useState(seedRoles);
+function RolesPage({ roles, loading, error, actions }: { roles: SystemRole[]; loading: boolean; error: unknown; actions: SystemManagementActions }) {
   return (
     <SystemPageShell
       title="角色管理"
+      loading={loading}
+      error={error}
+      actionError={actions.error}
       actions={
-        <Button onClick={() => setRoles([{ id: `r_${Date.now()}`, name: "新角色", code: "custom_role", users: 0, scope: "自定义数据", permissions: [], enabled: true }, ...roles])}>
+        <Button onClick={actions.createRole} disabled={actions.pending}>
           <Shield className="mr-1.5 h-4 w-4" />
           新增角色
         </Button>
       }
     >
       <div className="grid gap-3 xl:grid-cols-3">
+        {roles.length === 0 ? <SystemEmptyState label="暂无角色" /> : null}
         {roles.map((role) => (
-          <Card key={role.id}>
+          <div key={role.id} className="rounded-lg border p-3">
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0">
                 <div className="truncate font-medium">{role.name}</div>
                 <div className="mt-1 font-mono text-xs text-muted-foreground">{role.code}</div>
               </div>
-              <Switch checked={role.enabled} onCheckedChange={(checked) => setRoles((items) => items.map((item) => (item.id === role.id ? { ...item, enabled: checked } : item)))} />
+              <Switch checked={role.enabled} disabled={actions.pending} onCheckedChange={(checked) => actions.setRoleEnabled(role.id, checked)} />
             </div>
             <div className="mt-3 grid gap-2 text-xs">
               <InfoRow label="用户数" value={`${role.users}`} />
               <InfoRow label="数据范围" value={role.scope} />
               <InfoRow label="权限" value={role.permissions.join(", ") || "-"} />
             </div>
-          </Card>
+          </div>
         ))}
       </div>
     </SystemPageShell>
   );
 }
 
-function PermissionsPage() {
-  const [permissions, setPermissions] = useState(seedPermissions);
+function PermissionsPage({ permissions, loading, error, actions }: { permissions: SystemPermission[]; loading: boolean; error: unknown; actions: SystemManagementActions }) {
   return (
     <SystemPageShell
       title="权限管理"
+      loading={loading}
+      error={error}
+      actionError={actions.error}
       actions={
-        <Button onClick={() => setPermissions([{ id: `p_${Date.now()}`, name: "新权限", code: "custom:permission", module: "系统管理", type: "button", enabled: true }, ...permissions])}>
+        <Button onClick={actions.createPermission} disabled={actions.pending}>
           <KeyRound className="mr-1.5 h-4 w-4" />
           新增权限
         </Button>
@@ -483,50 +560,56 @@ function PermissionsPage() {
                 <Button
                   variant="secondary"
                   size="sm"
-                  onClick={() => setPermissions((items) => items.map((item) => (item.id === permission.id ? { ...item, enabled: !item.enabled } : item)))}
+                  disabled={actions.pending}
+                  onClick={() => actions.setPermissionEnabled(permission.id, !permission.enabled)}
                 >
-                  切换
+                  {permission.enabled ? "停用" : "启用"}
                 </Button>
               </Td>
             </tr>
           ))}
+          {permissions.length === 0 ? <EmptyTableRow colSpan={6} label="暂无权限点" /> : null}
         </tbody>
       </Table>
     </SystemPageShell>
   );
 }
 
-function DictionariesPage() {
-  const [items, setItems] = useState(seedDictionaries);
-  const groups = useMemo(() => Array.from(new Set(items.map((item) => item.group))), [items]);
-  const [activeGroup, setActiveGroup] = useState(seedDictionaries[0]?.group ?? "");
-  const rows = items.filter((item) => item.group === activeGroup);
+function DictionariesPage({ dictionaries, loading, error, actions }: { dictionaries: SystemDictionary[]; loading: boolean; error: unknown; actions: SystemManagementActions }) {
+  const groups = useMemo(() => Array.from(new Set(dictionaries.map((item) => item.group))), [dictionaries]);
+  const [activeGroup, setActiveGroup] = useState("");
+  const selectedGroup = groups.includes(activeGroup) ? activeGroup : groups[0] ?? "";
+  const rows = dictionaries.filter((item) => item.group === selectedGroup);
 
   return (
     <SystemPageShell
       title="数据字典"
+      loading={loading}
+      error={error}
+      actionError={actions.error}
       actions={
-        <Button onClick={() => setItems([{ id: `d_${Date.now()}`, group: activeGroup || "custom_group", key: "custom_key", label: "新字典项", value: "custom", sort: items.length + 1, enabled: true }, ...items])}>
+        <Button onClick={() => actions.createDictionary(selectedGroup, dictionaries.length + 1)} disabled={actions.pending}>
           <BookOpen className="mr-1.5 h-4 w-4" />
           新增字典
         </Button>
       }
     >
       <div className="grid gap-4 lg:grid-cols-[220px_minmax(0,1fr)]">
-        <Card className="p-2">
+        <div className="rounded-lg border p-2">
           <div className="px-2 py-1.5 text-xs font-medium text-muted-foreground">字典分组</div>
           <div className="grid gap-1">
+            {groups.length === 0 ? <SystemEmptyState label="暂无分组" /> : null}
             {groups.map((group) => (
               <button
                 key={group}
-                className={cn("rounded-lg px-2.5 py-2 text-left text-xs font-medium", activeGroup === group ? "bg-black text-white" : "hover:bg-muted")}
+                className={cn("rounded-lg px-2.5 py-2 text-left text-xs font-medium", selectedGroup === group ? "bg-black text-white" : "hover:bg-muted")}
                 onClick={() => setActiveGroup(group)}
               >
                 {group}
               </button>
             ))}
           </div>
-        </Card>
+        </div>
         <Table>
           <thead>
             <tr>
@@ -549,12 +632,13 @@ function DictionariesPage() {
                   <Badge tone={item.enabled ? "success" : "warning"}>{item.enabled ? "启用" : "停用"}</Badge>
                 </Td>
                 <Td>
-                  <Button variant="secondary" size="sm" onClick={() => setItems((list) => list.map((row) => (row.id === item.id ? { ...row, enabled: !row.enabled } : row)))}>
-                    切换
+                  <Button variant="secondary" size="sm" disabled={actions.pending} onClick={() => actions.setDictionaryEnabled(item.id, !item.enabled)}>
+                    {item.enabled ? "停用" : "启用"}
                   </Button>
                 </Td>
               </tr>
             ))}
+            {rows.length === 0 ? <EmptyTableRow colSpan={6} label="暂无字典项" /> : null}
           </tbody>
         </Table>
       </div>
@@ -562,13 +646,16 @@ function DictionariesPage() {
   );
 }
 
-function MenusPage() {
-  const [menus, setMenus] = useState(seedMenus);
+function MenusPage({ menus, loading, error, actions }: { menus: SystemMenu[]; loading: boolean; error: unknown; actions: SystemManagementActions }) {
+  const nextSort = (menus.at(-1)?.sort ?? 0) + 10;
   return (
     <SystemPageShell
       title="菜单编辑"
+      loading={loading}
+      error={error}
+      actionError={actions.error}
       actions={
-        <Button onClick={() => setMenus([{ id: `m_${Date.now()}`, title: "新菜单", path: "/custom", icon: "Settings", parent: "系统管理", sort: menus.length * 10 + 10, visible: true }, ...menus])}>
+        <Button onClick={() => actions.createMenu(nextSort)} disabled={actions.pending}>
           <ListTree className="mr-1.5 h-4 w-4" />
           新增菜单
         </Button>
@@ -595,26 +682,37 @@ function MenusPage() {
               <Td>{menu.parent}</Td>
               <Td>{menu.sort}</Td>
               <Td>
-                <Switch checked={menu.visible} onCheckedChange={(checked) => setMenus((items) => items.map((item) => (item.id === menu.id ? { ...item, visible: checked } : item)))} />
+                <Switch checked={menu.visible} disabled={actions.pending} onCheckedChange={(checked) => actions.setMenuVisible(menu.id, checked)} />
               </Td>
               <Td>
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  onClick={() => setMenus((items) => items.map((item) => (item.id === menu.id ? { ...item, sort: item.sort - 1 } : item)).sort((left, right) => left.sort - right.sort))}
-                >
-                  上移
+                <Button variant="secondary" size="sm" disabled={actions.pending} onClick={() => actions.setMenuVisible(menu.id, !menu.visible)}>
+                  {menu.visible ? "隐藏" : "显示"}
                 </Button>
               </Td>
             </tr>
           ))}
+          {menus.length === 0 ? <EmptyTableRow colSpan={7} label="暂无菜单" /> : null}
         </tbody>
       </Table>
     </SystemPageShell>
   );
 }
 
-function SystemPageShell({ title, actions, children }: { title: string; actions?: ReactNode; children: ReactNode }) {
+function SystemPageShell({
+  title,
+  actions,
+  loading,
+  error,
+  actionError,
+  children,
+}: {
+  title: string;
+  actions?: ReactNode;
+  loading: boolean;
+  error: unknown;
+  actionError: unknown;
+  children: ReactNode;
+}) {
   return (
     <div className="grid gap-4">
       <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
@@ -624,7 +722,9 @@ function SystemPageShell({ title, actions, children }: { title: string; actions?
         </div>
         <div className="flex flex-wrap gap-2">{actions}</div>
       </div>
-      <Card>{children}</Card>
+      {error ? <ApiErrorState error={error} title={`${title}数据读取失败`} /> : null}
+      {actionError ? <ApiErrorState error={actionError} title={`${title}操作失败`} /> : null}
+      <Card>{loading ? <SystemEmptyState label="正在读取数据" /> : children}</Card>
     </div>
   );
 }
@@ -636,12 +736,26 @@ function ToolbarSearch({ value, onChange }: { value: string; onChange: (value: s
         <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
         <Input className="pl-8" value={value} onChange={(event) => onChange(event.target.value)} placeholder="搜索" />
       </label>
-      <Button variant="secondary">
-        <Save className="mr-1.5 h-4 w-4" />
-        保存
-      </Button>
     </div>
   );
+}
+
+function EmptyTableRow({ colSpan, label }: { colSpan: number; label: string }) {
+  return (
+    <tr>
+      <Td colSpan={colSpan} className="py-8 text-center text-muted-foreground">
+        {label}
+      </Td>
+    </tr>
+  );
+}
+
+function SystemEmptyState({ label }: { label: string }) {
+  return <div className="rounded-lg border border-dashed px-3 py-6 text-center text-xs text-muted-foreground">{label}</div>;
+}
+
+function formatLastLogin(user: SystemUser) {
+  return user.last_login || user.last_login_at || "-";
 }
 
 function InfoRow({ label, value }: { label: string; value: string }) {

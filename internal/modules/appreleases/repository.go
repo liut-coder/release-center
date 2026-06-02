@@ -31,6 +31,20 @@ type Store interface {
 	AuditExists(ctx context.Context, action, targetID string) (bool, error)
 }
 
+type SystemManagementStore interface {
+	SystemManagementOverview(ctx context.Context) (SystemManagementOverview, error)
+	CreateSystemUser(ctx context.Context, req CreateSystemUserRequest) (SystemUserAdmin, error)
+	UpdateSystemUserStatus(ctx context.Context, id, status string) (SystemUserAdmin, error)
+	CreateSystemRole(ctx context.Context, req CreateSystemRoleRequest) (SystemRoleAdmin, error)
+	UpdateSystemRoleEnabled(ctx context.Context, id string, enabled bool) (SystemRoleAdmin, error)
+	CreateSystemPermission(ctx context.Context, req CreateSystemPermissionRequest) (SystemPermissionAdmin, error)
+	UpdateSystemPermissionEnabled(ctx context.Context, id string, enabled bool) (SystemPermissionAdmin, error)
+	CreateSystemDictionary(ctx context.Context, req CreateSystemDictionaryRequest) (SystemDictionaryAdmin, error)
+	UpdateSystemDictionaryEnabled(ctx context.Context, id string, enabled bool) (SystemDictionaryAdmin, error)
+	CreateSystemMenu(ctx context.Context, req CreateSystemMenuRequest) (SystemMenuAdmin, error)
+	UpdateSystemMenuVisible(ctx context.Context, id string, visible bool) (SystemMenuAdmin, error)
+}
+
 type ResourceCandidate struct {
 	ResourceVersion      string
 	Channel              string

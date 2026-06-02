@@ -595,6 +595,149 @@ type AppActionResponse struct {
 	MessageZh string          `json:"message_zh,omitempty"`
 }
 
+type SystemManagementOverview struct {
+	Users        []SystemUserAdmin       `json:"users"`
+	Roles        []SystemRoleAdmin       `json:"roles"`
+	Permissions  []SystemPermissionAdmin `json:"permissions"`
+	Dictionaries []SystemDictionaryAdmin `json:"dictionaries"`
+	Menus        []SystemMenuAdmin       `json:"menus"`
+	MessageZh    string                  `json:"message_zh,omitempty"`
+}
+
+type SystemUserAdmin struct {
+	ID          string    `json:"id"`
+	Name        string    `json:"name"`
+	Account     string    `json:"account"`
+	Role        string    `json:"role"`
+	RoleCode    string    `json:"role_code,omitempty"`
+	Department  string    `json:"department,omitempty"`
+	Status      string    `json:"status"`
+	LastLogin   string    `json:"last_login,omitempty"`
+	LastLoginAt time.Time `json:"last_login_at,omitempty"`
+	CreatedAt   time.Time `json:"created_at,omitempty"`
+	UpdatedAt   time.Time `json:"updated_at,omitempty"`
+}
+
+type SystemRoleAdmin struct {
+	ID          string    `json:"id"`
+	Name        string    `json:"name"`
+	Code        string    `json:"code"`
+	Users       int       `json:"users"`
+	Scope       string    `json:"scope"`
+	Permissions []string  `json:"permissions"`
+	Enabled     bool      `json:"enabled"`
+	CreatedAt   time.Time `json:"created_at,omitempty"`
+	UpdatedAt   time.Time `json:"updated_at,omitempty"`
+}
+
+type SystemPermissionAdmin struct {
+	ID        string    `json:"id"`
+	Name      string    `json:"name"`
+	Code      string    `json:"code"`
+	Module    string    `json:"module"`
+	Type      string    `json:"type"`
+	Enabled   bool      `json:"enabled"`
+	CreatedAt time.Time `json:"created_at,omitempty"`
+	UpdatedAt time.Time `json:"updated_at,omitempty"`
+}
+
+type SystemDictionaryAdmin struct {
+	ID        string    `json:"id"`
+	Group     string    `json:"group"`
+	Key       string    `json:"key"`
+	Label     string    `json:"label"`
+	Value     string    `json:"value"`
+	Sort      int       `json:"sort"`
+	Enabled   bool      `json:"enabled"`
+	CreatedAt time.Time `json:"created_at,omitempty"`
+	UpdatedAt time.Time `json:"updated_at,omitempty"`
+}
+
+type SystemMenuAdmin struct {
+	ID        string    `json:"id"`
+	Title     string    `json:"title"`
+	Path      string    `json:"path"`
+	Icon      string    `json:"icon"`
+	Parent    string    `json:"parent"`
+	Sort      int       `json:"sort"`
+	Visible   bool      `json:"visible"`
+	CreatedAt time.Time `json:"created_at,omitempty"`
+	UpdatedAt time.Time `json:"updated_at,omitempty"`
+}
+
+type CreateSystemUserRequest struct {
+	Name       string `json:"name"`
+	Account    string `json:"account"`
+	RoleCode   string `json:"role_code"`
+	Role       string `json:"role"`
+	Department string `json:"department"`
+	Status     string `json:"status"`
+}
+
+type CreateSystemRoleRequest struct {
+	Name        string   `json:"name"`
+	Code        string   `json:"code"`
+	Scope       string   `json:"scope"`
+	Permissions []string `json:"permissions"`
+	Enabled     *bool    `json:"enabled,omitempty"`
+}
+
+type CreateSystemPermissionRequest struct {
+	Name    string `json:"name"`
+	Code    string `json:"code"`
+	Module  string `json:"module"`
+	Type    string `json:"type"`
+	Enabled *bool  `json:"enabled,omitempty"`
+}
+
+type CreateSystemDictionaryRequest struct {
+	Group   string `json:"group"`
+	Key     string `json:"key"`
+	Label   string `json:"label"`
+	Value   string `json:"value"`
+	Sort    int    `json:"sort"`
+	Enabled *bool  `json:"enabled,omitempty"`
+}
+
+type CreateSystemMenuRequest struct {
+	Title   string `json:"title"`
+	Path    string `json:"path"`
+	Icon    string `json:"icon"`
+	Parent  string `json:"parent"`
+	Sort    int    `json:"sort"`
+	Visible *bool  `json:"visible,omitempty"`
+}
+
+type SystemUserActionResponse struct {
+	OK        bool            `json:"ok"`
+	User      SystemUserAdmin `json:"user"`
+	MessageZh string          `json:"message_zh,omitempty"`
+}
+
+type SystemRoleActionResponse struct {
+	OK        bool            `json:"ok"`
+	Role      SystemRoleAdmin `json:"role"`
+	MessageZh string          `json:"message_zh,omitempty"`
+}
+
+type SystemPermissionActionResponse struct {
+	OK         bool                  `json:"ok"`
+	Permission SystemPermissionAdmin `json:"permission"`
+	MessageZh  string                `json:"message_zh,omitempty"`
+}
+
+type SystemDictionaryActionResponse struct {
+	OK         bool                  `json:"ok"`
+	Dictionary SystemDictionaryAdmin `json:"dictionary"`
+	MessageZh  string                `json:"message_zh,omitempty"`
+}
+
+type SystemMenuActionResponse struct {
+	OK        bool            `json:"ok"`
+	Menu      SystemMenuAdmin `json:"menu"`
+	MessageZh string          `json:"message_zh,omitempty"`
+}
+
 type ResourceActionResponse struct {
 	OK              bool                    `json:"ok"`
 	ResourceVersion AppResourceVersionAdmin `json:"resource_version"`

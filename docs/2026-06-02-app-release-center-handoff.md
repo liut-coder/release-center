@@ -28,6 +28,8 @@
 - 后台 overview API 已返回派生 `quality_alerts`，统计页已展示达到阈值后的质量告警卡片。
 - Manifest Ed25519 签名已接入资源打包和后台上传链路，`releasectl` 已提供公钥导出和本地验签命令。
 - Go server 已托管 `WEB_DIST=web/dist`，`GET /` 返回后台页面，`/api/*` 和 `/admin/api/*` 保持 API 行为。
+- 系统管理已新增用户、角色、权限、数据字典、菜单 PostgreSQL migration、Admin API 和前端 API 客户端。
+- 后台系统管理页面已从前端本地示例状态切换到后端 overview/create/enable/disable/show/hide 接口，操作后通过 React Query 刷新。
 - 本机 PostgreSQL 临时 schema 已完成真实 DB smoke，覆盖迁移、APK URL 登记、发布、update-check、资源上传发布、resource-check、activation_failed 自动暂停和审计。
 
 当前已落地 SHA-256、文件大小、ZIP 内容校验、Manifest Ed25519 签名和禁止执行代码增量发布。Android 客户端内置公钥验签仍需在客户端工程和真机 smoke 中确认。
@@ -37,7 +39,7 @@
 | 方向 | 当前状态 | 仍需外部确认 |
 |---|---|---|
 | 后端闭环 | App / build / release / resource / event / heartbeat / preflight / audit API 已落地 | 生产 18080 使用真实 `DATABASE_URL` 执行迁移并重启 |
-| 前端闭环 | `web/` 管理台已具备登录、首页、系统管理脚手架、用户/角色/权限/数据字典/菜单编辑和 App 发版中心业务模块 | 用户/角色/权限/字典/菜单真实 API、权限拦截和生产静态资源浏览器 smoke |
+| 前端闭环 | `web/` 管理台已具备登录、首页、系统管理页面、用户/角色/权限/数据字典/菜单后端数据接入和 App 发版中心业务模块 | RBAC 权限拦截和生产静态资源浏览器 smoke |
 | CLI / CI | `releasectl` 覆盖 APK URL/文件登记、资源打包上传、公钥导出、Manifest 验签；workflow 覆盖基础 smoke | 受保护 CI 环境配置真实 token 后跑发布链路 |
 | APK 更新 | 发布、灰度、下载、update-check、SHA-256 信息输出已闭环 | Android 真机下载安装、校验和系统安装器 smoke |
 | 资源增量 | 白名单、ZIP 校验、Manifest、下载、resource-check、自动暂停已闭环 | Android 真机下载、Ed25519 验签、解压激活、失败回滚 smoke |
@@ -67,7 +69,7 @@
 | GitHub/Gitea Webhook 记录 | `Handler.Webhook(provider)`、`SaveWebhookEvent` | 已有 |
 | GitHub/Gitea Actions 上传制品 | `/api/v1/ci/artifacts` + `releasectl artifact-upload` + `CIMiddleware` | 已验证 |
 
-当前目录已包含 `appreleases` 标准路由注册、迁移、服务端 main、Go module、Makefile、CI workflow 和独立后台 Web。后台 Web 已具备基础管理台壳，系统管理页面当前使用前端本地状态和示例数据；后续需要补齐真实用户、角色、权限、数据字典、菜单表结构和 API，并把权限拦截接入后台路由。发版闭环已在本机 PostgreSQL 临时 schema 验证；生产 18080 仍需用真实 APK、真实资源包和 Android 客户端做真机 smoke。
+当前目录已包含 `appreleases` 标准路由注册、迁移、服务端 main、Go module、Makefile、CI workflow 和独立后台 Web。后台 Web 已具备基础管理台壳，系统管理页面已接入后端数据；用户、角色、权限、数据字典、菜单已有表结构和 API，后续需要在真实 PostgreSQL 环境验收持久化读写，并把 RBAC 权限拦截接入后台路由。发版闭环已在本机 PostgreSQL 临时 schema 验证；生产 18080 仍需用真实 APK、真实资源包和 Android 客户端做真机 smoke。
 
 CI Token 推荐在完整服务端挂载时接入：
 
@@ -428,7 +430,8 @@ P0 在生产 18080 真实环境执行 `cmd/migrate` 并重启服务。
 P0 用真实 APK 和 Android 客户端跑安装升级、SHA-256 校验和系统安装器 smoke。
 P0 用真实资源包和 Android 客户端跑 ZIP 下载、校验、激活、失败回滚 smoke。
 P1 Android 客户端内置 Manifest 公钥并完成真机验签 smoke。
-P1 补齐系统管理后端：用户、角色、权限、数据字典、菜单的表结构、API、审计和权限拦截。
+P1 在真实 PostgreSQL 上验收系统管理用户、角色、权限、数据字典、菜单持久化读写。
+P1 补齐 RBAC 权限拦截：登录身份、角色权限、菜单可见性、Admin API permission middleware。
 P2 将质量告警接入外部通知和自动执行策略。
 ```
 

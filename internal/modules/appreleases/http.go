@@ -163,6 +163,140 @@ func (h *Handler) AppAction(action string) http.HandlerFunc {
 	}
 }
 
+func (h *Handler) SystemManagementOverview(w http.ResponseWriter, r *http.Request) {
+	resp, err := h.service.SystemManagementOverview(r.Context())
+	if err != nil {
+		httpx.Error(w, r, http.StatusInternalServerError, "system.overview_failed", "读取系统管理数据失败", map[string]any{"error": err.Error()})
+		return
+	}
+	httpx.JSON(w, http.StatusOK, resp)
+}
+
+func (h *Handler) CreateSystemUser(w http.ResponseWriter, r *http.Request) {
+	var req CreateSystemUserRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		httpx.Error(w, r, http.StatusBadRequest, "request.invalid_json", "请求 JSON 格式不正确", nil)
+		return
+	}
+	resp, err := h.service.CreateSystemUser(r.Context(), req)
+	if err != nil {
+		httpx.Error(w, r, http.StatusBadRequest, "system.user_save_failed", "保存用户失败", map[string]any{"error": err.Error()})
+		return
+	}
+	httpx.JSON(w, http.StatusOK, resp)
+}
+
+func (h *Handler) SystemUserAction(action string) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		resp, err := h.service.SystemUserAction(r.Context(), chi.URLParam(r, "user_id"), action)
+		if err != nil {
+			httpx.Error(w, r, http.StatusBadRequest, "system.user_action_failed", "用户操作失败", map[string]any{"error": err.Error()})
+			return
+		}
+		httpx.JSON(w, http.StatusOK, resp)
+	}
+}
+
+func (h *Handler) CreateSystemRole(w http.ResponseWriter, r *http.Request) {
+	var req CreateSystemRoleRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		httpx.Error(w, r, http.StatusBadRequest, "request.invalid_json", "请求 JSON 格式不正确", nil)
+		return
+	}
+	resp, err := h.service.CreateSystemRole(r.Context(), req)
+	if err != nil {
+		httpx.Error(w, r, http.StatusBadRequest, "system.role_save_failed", "保存角色失败", map[string]any{"error": err.Error()})
+		return
+	}
+	httpx.JSON(w, http.StatusOK, resp)
+}
+
+func (h *Handler) SystemRoleAction(action string) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		resp, err := h.service.SystemRoleAction(r.Context(), chi.URLParam(r, "role_id"), action)
+		if err != nil {
+			httpx.Error(w, r, http.StatusBadRequest, "system.role_action_failed", "角色操作失败", map[string]any{"error": err.Error()})
+			return
+		}
+		httpx.JSON(w, http.StatusOK, resp)
+	}
+}
+
+func (h *Handler) CreateSystemPermission(w http.ResponseWriter, r *http.Request) {
+	var req CreateSystemPermissionRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		httpx.Error(w, r, http.StatusBadRequest, "request.invalid_json", "请求 JSON 格式不正确", nil)
+		return
+	}
+	resp, err := h.service.CreateSystemPermission(r.Context(), req)
+	if err != nil {
+		httpx.Error(w, r, http.StatusBadRequest, "system.permission_save_failed", "保存权限失败", map[string]any{"error": err.Error()})
+		return
+	}
+	httpx.JSON(w, http.StatusOK, resp)
+}
+
+func (h *Handler) SystemPermissionAction(action string) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		resp, err := h.service.SystemPermissionAction(r.Context(), chi.URLParam(r, "permission_id"), action)
+		if err != nil {
+			httpx.Error(w, r, http.StatusBadRequest, "system.permission_action_failed", "权限操作失败", map[string]any{"error": err.Error()})
+			return
+		}
+		httpx.JSON(w, http.StatusOK, resp)
+	}
+}
+
+func (h *Handler) CreateSystemDictionary(w http.ResponseWriter, r *http.Request) {
+	var req CreateSystemDictionaryRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		httpx.Error(w, r, http.StatusBadRequest, "request.invalid_json", "请求 JSON 格式不正确", nil)
+		return
+	}
+	resp, err := h.service.CreateSystemDictionary(r.Context(), req)
+	if err != nil {
+		httpx.Error(w, r, http.StatusBadRequest, "system.dictionary_save_failed", "保存字典失败", map[string]any{"error": err.Error()})
+		return
+	}
+	httpx.JSON(w, http.StatusOK, resp)
+}
+
+func (h *Handler) SystemDictionaryAction(action string) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		resp, err := h.service.SystemDictionaryAction(r.Context(), chi.URLParam(r, "dictionary_id"), action)
+		if err != nil {
+			httpx.Error(w, r, http.StatusBadRequest, "system.dictionary_action_failed", "字典操作失败", map[string]any{"error": err.Error()})
+			return
+		}
+		httpx.JSON(w, http.StatusOK, resp)
+	}
+}
+
+func (h *Handler) CreateSystemMenu(w http.ResponseWriter, r *http.Request) {
+	var req CreateSystemMenuRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		httpx.Error(w, r, http.StatusBadRequest, "request.invalid_json", "请求 JSON 格式不正确", nil)
+		return
+	}
+	resp, err := h.service.CreateSystemMenu(r.Context(), req)
+	if err != nil {
+		httpx.Error(w, r, http.StatusBadRequest, "system.menu_save_failed", "保存菜单失败", map[string]any{"error": err.Error()})
+		return
+	}
+	httpx.JSON(w, http.StatusOK, resp)
+}
+
+func (h *Handler) SystemMenuAction(action string) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		resp, err := h.service.SystemMenuAction(r.Context(), chi.URLParam(r, "menu_id"), action)
+		if err != nil {
+			httpx.Error(w, r, http.StatusBadRequest, "system.menu_action_failed", "菜单操作失败", map[string]any{"error": err.Error()})
+			return
+		}
+		httpx.JSON(w, http.StatusOK, resp)
+	}
+}
+
 func (h *Handler) CreateBuild(w http.ResponseWriter, r *http.Request) {
 	var req CreateBuildRequest
 	contentType := r.Header.Get("Content-Type")
