@@ -158,24 +158,23 @@ async function toggleRoleCardState(page: Page, roleCard: Locator) {
 
 async function submitDemoReleaseForms(page: Page) {
   const suffix = Date.now().toString().slice(-6);
-  const patch = Number(suffix.slice(-2)) || 2;
-  const versionName = `1.0.${patch}-dev.1`;
-  const versionCode = 1_000_000_000 + Number(suffix);
-  const buildNumber = versionCode;
+  const appKey = `smoke-app-${suffix}`;
   const resourceVersion = `${todayCompact()}.9${suffix}`;
   const releaseTitle = `Smoke 发布 ${suffix}`;
   const updatedReleaseTitle = `Smoke 发布已编辑 ${suffix}`;
   const updatedResourceTitle = `Smoke 资源已编辑 ${suffix}`;
 
+  await operateDemoAppManagement(page, appKey, suffix);
+
   await releaseTab(page, "构建记录").click();
+  const buildVersion = await useRecommendedBuildVersion(page);
   await page.getByPlaceholder("branch / tag / commit").fill("main");
-  await page.getByPlaceholder("versionName").fill(versionName);
-  await page.getByPlaceholder("versionCode").fill(String(versionCode));
-  await page.getByPlaceholder("buildNumber").fill(String(buildNumber));
+  await page.getByPlaceholder("buildNumber").fill(buildVersion.versionCode);
   await page.getByPlaceholder("构建备注").fill("Playwright demo smoke build");
+  await expect(page.getByRole("button", { name: "创建构建任务" })).toBeEnabled();
   await page.getByRole("button", { name: "创建构建任务" }).click();
   await expect(page.getByText("构建任务已创建")).toBeVisible();
-  await expect(page.getByText(versionName).first()).toBeVisible();
+  await expect(page.getByText(buildVersion.versionName).first()).toBeVisible();
   await expectNoPageOverflow(page);
 
   await releaseTab(page, "App 发布").click();
@@ -183,7 +182,7 @@ async function submitDemoReleaseForms(page: Page) {
   await page.getByPlaceholder("摘要").fill("Playwright demo release draft");
   await page.getByRole("button", { name: "创建发布草稿" }).click();
   await expect(page.getByText("发布草稿已创建")).toBeVisible();
-  const releaseRow = page.getByTestId(`release-row-${versionName}`);
+  const releaseRow = page.getByTestId(`release-row-${buildVersion.versionName}`);
   await expect(releaseRow.getByText(releaseTitle)).toBeVisible();
   await expectNoPageOverflow(page);
   await operateDemoRelease(page, releaseRow, updatedReleaseTitle);
@@ -202,7 +201,40 @@ async function submitDemoReleaseForms(page: Page) {
   await expectNoPageOverflow(page);
   await operateDemoResource(page, resourceRow, updatedResourceTitle);
 
-  await verifyAuditTrail(page, versionName, resourceVersion);
+  await verifyAuditTrail(page, buildVersion.versionName, resourceVersion);
+}
+
+async function useRecommendedBuildVersion(page: Page) {
+  await page.getByRole("button", { name: "使用建议值" }).click();
+  const versionNameInput = page.getByPlaceholder("versionName");
+  const versionCodeInput = page.getByPlaceholder("versionCode");
+  const versionName = await versionNameInput.inputValue();
+  const versionCode = await versionCodeInput.inputValue();
+  await expect(versionNameInput).toHaveValue(/.+/);
+  await expect(versionCodeInput).toHaveValue(/^[1-9]\d*$/);
+  return { versionName, versionCode };
+}
+
+async function operateDemoAppManagement(page: Page, appKey: string, suffix: string) {
+  await releaseTab(page, "概览").click();
+  await expect(page.getByText("App 列表")).toBeVisible();
+  await page.getByPlaceholder("app_key").fill(appKey);
+  await page.getByPlaceholder("应用名称").fill(`Smoke 应用 ${suffix}`);
+  await page.getByPlaceholder("平台").fill("android");
+  await page.getByPlaceholder("包名").fill(`com.releasecenter.smoke${suffix}`);
+  await page.getByPlaceholder("描述").fill("Playwright demo app management smoke");
+  await page.getByRole("button", { name: "保存应用" }).click();
+  await expect(page.getByText("应用已保存")).toBeVisible();
+  const appRow = page.getByTestId(`app-row-${appKey}`);
+  await expect(appRow.getByText(`Smoke 应用 ${suffix}`)).toBeVisible();
+  await expect(appRow.getByText("启用").first()).toBeVisible();
+  await appRow.getByRole("button", { name: "停用", exact: true }).click();
+  await expect(page.getByText("应用已停用")).toBeVisible();
+  await expect(appRow.getByText("停用").first()).toBeVisible();
+  await appRow.getByRole("button", { name: "启用", exact: true }).click();
+  await expect(page.getByText("应用已启用")).toBeVisible();
+  await expect(appRow.getByText("启用").first()).toBeVisible();
+  await expectNoPageOverflow(page);
 }
 
 async function operateDemoRelease(page: Page, releaseRow: Locator, updatedTitle: string) {

@@ -1057,7 +1057,7 @@ function AppsOverview({
         </thead>
         <tbody>
           {rows.map((app) => (
-            <tr key={app.id || app.app_key}>
+            <tr key={app.id || app.app_key} data-testid={`app-row-${app.app_key}`}>
               <Td>{app.name}</Td>
               <Td>{app.platform}</Td>
               <Td>{app.package_name}</Td>
