@@ -135,6 +135,8 @@ cd web && npm run build
 
 系统管理页面已不再依赖前端本地 seed 状态。当前后端提供 `SystemManagementStore`，PostgreSQL 环境读写 `system_users`、`system_roles`、`system_permissions`、`system_dictionaries`、`system_menus`；无数据库 store 时使用进程内 Demo 状态，方便本地调试新增、启停和菜单显隐。系统管理写操作会调用 `InsertAudit` 记录操作审计。下一步需要把登录身份、角色权限和菜单可见性接入服务端 RBAC middleware。后台审计页会突出显示 `resource.auto_pause` 自动保护记录，资源列表会展示 paused 资源的 `paused_at` 暂停时间。
 
+App 发版中心的构建表单已去掉旧公网 IP 默认值，`apiBaseUrl` 默认从 `VITE_API_BASE_URL` 读取；未配置时使用当前页面 origin，并统一补齐末尾 `/`。这样本地 demo、Go server 托管后台和生产同源部署时，APK 写入的 API 地址不会误带过期环境。Mock 数据中的示例地址也改为 `127.0.0.1:18080`，避免误导生产配置。
+
 ## 文档中心推进计划
 
 文档中心建议作为发布中心的配套模块推进，先解决“文档可发布、可访问、可追溯”，再扩展到“多项目、多版本、权限、搜索和发布联动”。一期不自研复杂 CMS，优先复用 Git 仓库、静态站点构建、Cloudflare Pages 或现有 Go 静态托管能力。

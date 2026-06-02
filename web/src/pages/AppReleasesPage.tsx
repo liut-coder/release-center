@@ -121,7 +121,7 @@ export function AppReleasesPage() {
   const [versionName, setVersionName] = useState(defaultBuildVersionName);
   const [versionCode, setVersionCode] = useState("1");
   const [buildNumber, setBuildNumber] = useState("1");
-  const [apiBaseUrl, setApiBaseUrl] = useState("http://31.57.218.242:18080/");
+  const [apiBaseUrl, setApiBaseUrl] = useState(defaultApiBaseUrl);
   const [releaseNotes, setReleaseNotes] = useState("");
   const [buildApkFile, setBuildApkFile] = useState<File | null>(null);
   const [releaseBuildId, setReleaseBuildId] = useState("");
@@ -3000,6 +3000,16 @@ function isAllowedGitRef(value: string) {
 function normalizeUrl(value: string) {
   const trimmed = value.trim();
   return trimmed.endsWith("/") ? trimmed : `${trimmed}/`;
+}
+
+function defaultApiBaseUrl() {
+  const configured = import.meta.env.VITE_API_BASE_URL;
+  const value = typeof configured === "string" && configured.trim() ? configured.trim() : window.location.origin;
+  try {
+    return normalizeUrl(new URL(value, window.location.origin).toString());
+  } catch {
+    return normalizeUrl(window.location.origin);
+  }
 }
 
 function suggestBuildVersion(versionName: string, channel: string, releases: AppRelease[], jobs: AppReleaseBuildJob[]): BuildVersionSuggestion {

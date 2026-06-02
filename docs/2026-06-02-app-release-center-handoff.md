@@ -30,6 +30,7 @@
 - Go server 已托管 `WEB_DIST=web/dist`，`GET /` 返回后台页面，`/api/*` 和 `/admin/api/*` 保持 API 行为。
 - 系统管理已新增用户、角色、权限、数据字典、菜单 PostgreSQL migration、Admin API 和前端 API 客户端。
 - 后台系统管理页面已从前端本地示例状态切换到后端 overview/create/enable/disable/show/hide 接口，操作后通过 React Query 刷新；菜单 visible 状态已驱动侧栏导航和首页模块入口。
+- App 发版中心构建表单的 `apiBaseUrl` 已改为优先读取 `VITE_API_BASE_URL`，未配置时使用当前页面 origin，避免本地或生产同源部署时默认写入旧公网 IP。
 - 本机 PostgreSQL 临时 schema 已完成真实 DB smoke，覆盖迁移、APK URL 登记、发布、update-check、资源上传发布、resource-check、activation_failed 自动暂停和审计。
 
 当前已落地 SHA-256、文件大小、ZIP 内容校验、Manifest Ed25519 签名和禁止执行代码增量发布。Android 客户端内置公钥验签仍需在客户端工程和真机 smoke 中确认。
@@ -391,6 +392,17 @@ go build -buildvcs=false ./cmd/server ./cmd/releasectl ./cmd/migrate
 cd web && npm run build
 ```
 
+2026-06-02 最新修复复验：
+
+```text
+App 构建表单 apiBaseUrl 默认值已改为 VITE_API_BASE_URL 或当前页面 origin
+go test ./...
+go build -buildvcs=false ./cmd/server ./cmd/releasectl ./cmd/migrate
+cd web && npm run build
+```
+
+限制：当前环境未安装 Chromium / Playwright / Puppeteer，尚未完成浏览器自动化点击和视觉 smoke；前端结论只覆盖 TypeScript/Vite 构建与后端 API smoke。
+
 结果：当前 `/root/release-center` Go module 验证通过：
 
 ```text
@@ -432,6 +444,7 @@ P0 用真实资源包和 Android 客户端跑 ZIP 下载、校验、激活、失
 P1 Android 客户端内置 Manifest 公钥并完成真机验签 smoke。
 P1 在真实 PostgreSQL 上验收系统管理用户、角色、权限、数据字典、菜单持久化读写。
 P1 补齐 RBAC 权限拦截：登录身份、角色权限、菜单可见性、Admin API permission middleware。
+P1 补齐前端浏览器自动化 smoke，覆盖登录、首页、系统管理、App 发版中心表单和菜单显隐。
 P2 将质量告警接入外部通知和自动执行策略。
 ```
 
