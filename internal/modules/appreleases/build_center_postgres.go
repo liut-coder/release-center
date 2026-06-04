@@ -241,6 +241,47 @@ func (s *PostgresStore) ReplaceBuildCenterRunArtifacts(ctx context.Context, runI
 	return tx.Commit(ctx)
 }
 
+func (s *PostgresStore) MatchWebhookBuildRoutes(ctx context.Context, event WebhookEventRequest) ([]WebhookBuildRoute, error) {
+	if event.Repository == "" {
+		return []WebhookBuildRoute{}, nil
+	}
+	rows, err := s.db.Query(ctx, `
+		select wr.id::text, p.project_key, cr.repo_full_name,
+		       coalesce(bp.profile_key, 'default'), wr.event_type,
+		       wr.ref_pattern, wr.action, cr.trigger_on_push, cr.trigger_on_tag
+		from webhook_routes wr
+		join code_repositories cr on cr.id = wr.repository_id and cr.tenant_id = wr.tenant_id
+		join release_projects p on p.id = wr.project_id and p.tenant_id = wr.tenant_id
+		left join build_profiles bp on bp.id = wr.build_profile_id and bp.tenant_id = wr.tenant_id
+		where wr.tenant_id = 'default'
+		  and wr.enabled = true
+		  and cr.webhook_enabled = true
+		  and cr.provider = $1
+		  and (wr.event_type = $2 or wr.event_type = '*')
+		  and (
+		    cr.repo_full_name = $3
+		    or cr.repo_url = $3
+		    or cr.repo_url like '%' || $3 || '%'
+		  )
+		order by wr.created_at asc
+	`, event.Provider, event.EventType, event.Repository)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var routes []WebhookBuildRoute
+	for rows.Next() {
+		var route WebhookBuildRoute
+		if err := rows.Scan(&route.ID, &route.ProjectKey, &route.Repository,
+			&route.ProfileKey, &route.EventType, &route.RefPattern, &route.Action,
+			&route.TriggerOnPush, &route.TriggerOnTag); err != nil {
+			return nil, err
+		}
+		routes = append(routes, route)
+	}
+	return routes, rows.Err()
+}
+
 func (s *PostgresStore) buildProfileForRun(ctx context.Context, projectKey, profileKey string) (BuildProfileAdmin, error) {
 	if profileKey == "" {
 		profileKey = "default"

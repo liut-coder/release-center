@@ -744,6 +744,7 @@ func webhookEventFromRequest(provider string, r *http.Request, payload map[strin
 		stringFromMap(payload, "event_type"),
 		"unknown",
 	)
+	ref := normalizeWebhookRef(eventType, payload)
 	deliveryID := firstNonBlank(
 		r.Header.Get("X-GitHub-Delivery"),
 		r.Header.Get("X-Gitea-Delivery"),
@@ -769,7 +770,7 @@ func webhookEventFromRequest(provider string, r *http.Request, payload map[strin
 		EventType:  eventType,
 		DeliveryID: deliveryID,
 		Repository: repository,
-		Ref:        stringFromMap(payload, "ref"),
+		Ref:        ref,
 		CommitSHA:  commitSHA,
 		Sender:     sender,
 		Action:     stringFromMap(payload, "action"),
@@ -777,6 +778,29 @@ func webhookEventFromRequest(provider string, r *http.Request, payload map[strin
 		RunID:      firstNonBlank(nestedString(payload, "workflow_run", "id"), stringFromMap(payload, "run_id")),
 		RawPayload: payload,
 	}
+}
+
+func normalizeWebhookRef(eventType string, payload map[string]any) string {
+	ref := firstNonBlank(
+		stringFromMap(payload, "ref"),
+		nestedString(payload, "workflow_run", "head_branch"),
+	)
+	if ref == "" || strings.HasPrefix(ref, "refs/") {
+		return ref
+	}
+	refType := stringFromMap(payload, "ref_type")
+	if eventType == "create" {
+		if refType == "tag" {
+			return "refs/tags/" + ref
+		}
+		if refType == "branch" {
+			return "refs/heads/" + ref
+		}
+	}
+	if eventType == "workflow_run" {
+		return "refs/heads/" + ref
+	}
+	return ref
 }
 
 func stringFromMap(values map[string]any, key string) string {

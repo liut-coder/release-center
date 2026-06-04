@@ -547,9 +547,10 @@ type WebhookEventAdmin struct {
 }
 
 type WebhookEventResponse struct {
-	OK        bool              `json:"ok"`
-	Event     WebhookEventAdmin `json:"event"`
-	MessageZh string            `json:"message_zh,omitempty"`
+	OK            bool                  `json:"ok"`
+	Event         WebhookEventAdmin     `json:"event"`
+	TriggeredRuns []BuildCenterRunAdmin `json:"triggered_runs,omitempty"`
+	MessageZh     string                `json:"message_zh,omitempty"`
 }
 
 type CreateReleaseRequest struct {

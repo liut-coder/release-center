@@ -246,6 +246,13 @@ GitHub Actions 仍然可作为外部 CI 使用。外部 CI 构建完成后直接
 - 需要统一从后台可视化触发的项目。
 - 需要接其他机器 worker 的项目。
 
+当前已落地：
+
+- `/api/v1/webhooks/github` 和 `/api/v1/webhooks/gitea` 继续先写入 `webhook_events`。
+- Webhook 入库后会匹配已启用的 `code_repositories.webhook_enabled` 和 `webhook_routes.enabled`。
+- 命中 route 后创建 `build_center_runs` 并进入构建中心执行链路。
+- 第 5 号 migration 已预置 release-center 的 main push 和 tag route，但默认 disabled；配置 GitHub secret/认证后再开启仓库和 route。
+
 ## 6. Cloudflare 接入
 
 Cloudflare 不替代核心发布中心，作为部署和边缘层接入。
@@ -374,4 +381,3 @@ worker 注册
 - 构建日志、产物、上传状态展示。
 
 多环境发布计划、Cloudflare 真部署、外部 worker API 放在后续小分支，避免一次改动过大。
-

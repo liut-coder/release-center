@@ -455,7 +455,68 @@ func (s *Service) SaveWebhookEvent(ctx context.Context, req WebhookEventRequest)
 		"delivery_id": event.DeliveryID,
 		"repository":  event.Repository,
 	})
-	return WebhookEventResponse{OK: true, Event: event, MessageZh: "Webhook 事件已记录"}, nil
+	triggeredRuns, err := s.triggerWebhookBuildRoutes(ctx, req, event)
+	if err != nil {
+		return WebhookEventResponse{}, err
+	}
+	message := "Webhook 事件已记录"
+	if len(triggeredRuns) > 0 {
+		message = fmt.Sprintf("Webhook 事件已记录，已触发 %d 个构建任务", len(triggeredRuns))
+	}
+	return WebhookEventResponse{OK: true, Event: event, TriggeredRuns: triggeredRuns, MessageZh: message}, nil
+}
+
+func (s *Service) triggerWebhookBuildRoutes(ctx context.Context, req WebhookEventRequest, event WebhookEventAdmin) ([]BuildCenterRunAdmin, error) {
+	if strings.TrimSpace(req.Repository) == "" {
+		return nil, nil
+	}
+	routeStore, ok := s.store.(BuildCenterWebhookStore)
+	if !ok {
+		return nil, nil
+	}
+	routes, err := routeStore.MatchWebhookBuildRoutes(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+	triggeredRuns := make([]BuildCenterRunAdmin, 0, len(routes))
+	for _, route := range routes {
+		if !webhookRouteAllowsEvent(route, req) || !webhookRefMatches(route.RefPattern, req.Ref) {
+			continue
+		}
+		runReq := BuildCenterRunRequest{
+			ProfileKey: route.ProfileKey,
+			Action:     route.Action,
+			GitRef:     buildRefFromWebhookRef(req.Ref),
+			StartedBy:  firstNonBlank(req.Sender, "webhook"),
+		}
+		resp, err := s.CreateBuildCenterRun(ctx, route.ProjectKey, runReq)
+		if err != nil {
+			return triggeredRuns, err
+		}
+		run := resp.Run
+		_ = s.store.InsertAudit(ctx, "build_center.webhook_trigger", "build_center_run", run.ID, "Webhook 触发构建任务", map[string]any{
+			"webhook_event_id": event.ID,
+			"route_id":         route.ID,
+			"provider":         req.Provider,
+			"repository":       req.Repository,
+			"event_type":       req.EventType,
+			"ref":              req.Ref,
+			"commit_sha":       req.CommitSHA,
+		})
+		triggeredRuns = append(triggeredRuns, run)
+	}
+	return triggeredRuns, nil
+}
+
+func buildRefFromWebhookRef(ref string) string {
+	ref = strings.TrimSpace(ref)
+	if strings.HasPrefix(ref, "refs/heads/") {
+		return strings.TrimPrefix(ref, "refs/heads/")
+	}
+	if strings.HasPrefix(ref, "refs/tags/") {
+		return strings.TrimPrefix(ref, "refs/tags/")
+	}
+	return ref
 }
 
 func (s *Service) CreateRelease(ctx context.Context, req CreateReleaseRequest) (AdminActionResponse, error) {

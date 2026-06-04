@@ -29,6 +29,10 @@ type BuildCenterExecutionStore interface {
 	ReplaceBuildCenterRunArtifacts(ctx context.Context, runID string, artifacts []BuildCenterRunArtifact) error
 }
 
+type BuildCenterWebhookStore interface {
+	MatchWebhookBuildRoutes(ctx context.Context, event WebhookEventRequest) ([]WebhookBuildRoute, error)
+}
+
 type buildctlStatus struct {
 	BuildID     string                   `json:"build_id"`
 	Project     string                   `json:"project"`
@@ -300,6 +304,54 @@ func isAllowedBuildCenterAction(action string) bool {
 	default:
 		return false
 	}
+}
+
+func webhookRefMatches(pattern, ref string) bool {
+	pattern = strings.TrimSpace(pattern)
+	ref = strings.TrimSpace(ref)
+	if pattern == "" || pattern == "*" {
+		return true
+	}
+	if pattern == ref {
+		return true
+	}
+	if !strings.Contains(pattern, "*") {
+		return false
+	}
+	parts := strings.Split(pattern, "*")
+	position := 0
+	for index, part := range parts {
+		if part == "" {
+			continue
+		}
+		found := strings.Index(ref[position:], part)
+		if found < 0 {
+			return false
+		}
+		if index == 0 && !strings.HasPrefix(pattern, "*") && found != 0 {
+			return false
+		}
+		position += found + len(part)
+	}
+	lastPart := parts[len(parts)-1]
+	if lastPart != "" && !strings.HasSuffix(pattern, "*") && !strings.HasSuffix(ref, lastPart) {
+		return false
+	}
+	return true
+}
+
+func webhookRouteAllowsEvent(route WebhookBuildRoute, event WebhookEventRequest) bool {
+	eventType := strings.TrimSpace(event.EventType)
+	if route.EventType != "" && route.EventType != "*" && route.EventType != eventType {
+		return false
+	}
+	if eventType != "push" {
+		return true
+	}
+	if strings.HasPrefix(event.Ref, "refs/tags/") {
+		return route.TriggerOnTag
+	}
+	return route.TriggerOnPush
 }
 
 func uploadStatusForAction(action, status string) string {

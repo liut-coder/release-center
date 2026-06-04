@@ -156,6 +156,18 @@ type BuildCenterRunPatch struct {
 	Metadata     map[string]any
 }
 
+type WebhookBuildRoute struct {
+	ID            string `json:"id"`
+	ProjectKey    string `json:"project_key"`
+	Repository    string `json:"repository"`
+	ProfileKey    string `json:"profile_key"`
+	EventType     string `json:"event_type"`
+	RefPattern    string `json:"ref_pattern"`
+	Action        string `json:"action"`
+	TriggerOnPush bool   `json:"trigger_on_push"`
+	TriggerOnTag  bool   `json:"trigger_on_tag"`
+}
+
 type DeploymentTargetAdmin struct {
 	ID                    string          `json:"id"`
 	ProjectID             string          `json:"project_id"`
