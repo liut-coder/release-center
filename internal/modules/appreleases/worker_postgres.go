@@ -10,6 +10,25 @@ import (
 
 const workerTaskLogTailLimit = 200
 
+func (s *PostgresStore) WorkerOverview(ctx context.Context) (WorkerOverviewResponse, error) {
+	workers, err := s.listBuildWorkers(ctx)
+	if err != nil {
+		return WorkerOverviewResponse{}, err
+	}
+	tasks, err := s.listWorkerTasks(ctx)
+	if err != nil {
+		return WorkerOverviewResponse{}, err
+	}
+	return WorkerOverviewResponse{Workers: workers, Tasks: tasks}, nil
+}
+
+func (s *PostgresStore) CreateWorkerTask(ctx context.Context, req CreateWorkerTaskRequest) (WorkerTaskAdmin, error) {
+	row := s.db.QueryRow(ctx, workerTaskInsertReturningSQL(),
+		req.ProjectKey, nullableUUID(req.BuildProfileID), nullableUUID(req.BuildRunID),
+		req.TaskType, req.Action, req.RequiredLabels, req.Priority, jsonb(req.Metadata))
+	return scanWorkerTask(row)
+}
+
 func (s *PostgresStore) RegisterWorker(ctx context.Context, req WorkerRegisterRequest) (BuildWorkerAdmin, error) {
 	row := s.db.QueryRow(ctx, `
 		insert into build_workers (
@@ -194,7 +213,7 @@ func (s *PostgresStore) SaveWorkerTaskArtifacts(ctx context.Context, taskID stri
 	row := s.db.QueryRow(ctx, workerTaskUpdateReturningSQL(`
 		set status = 'running',
 		    artifact_manifest = artifact_manifest || $4::jsonb,
-		    metadata = metadata || jsonb_build_object('artifact_count', $5),
+		    metadata = metadata || jsonb_build_object('artifact_count', $5::int),
 		    updated_at = now()
 		where tenant_id = 'default'
 		  and id = $1::uuid
@@ -328,6 +347,32 @@ func workerTaskSelectSQL() string {
 	`
 }
 
+func workerTaskInsertReturningSQL() string {
+	return `
+		with inserted as (
+		  insert into worker_tasks (
+		    tenant_id, build_run_id, project_id, build_profile_id, task_type,
+		    action, status, required_labels, priority, metadata
+		  )
+		  values (
+		    'default', $3::uuid,
+		    (select id from release_projects where tenant_id = 'default' and project_key = nullif($1, '')),
+		    $2::uuid, $4, $5, 'queued', $6::text[], $7, $8
+		  )
+		  returning *
+		)
+		select id::text, coalesce(worker_id::text, ''), coalesce(build_run_id::text, ''),
+		       coalesce(project_id::text, ''), coalesce(build_profile_id::text, ''),
+		       task_type, action, status, required_labels, priority, lease_token,
+		       coalesce(leased_until, '0001-01-01 00:00:00+00'::timestamptz),
+		       attempts, log_tail, artifact_manifest, error_message, metadata,
+		       coalesce(started_at, '0001-01-01 00:00:00+00'::timestamptz),
+		       coalesce(finished_at, '0001-01-01 00:00:00+00'::timestamptz),
+		       created_at, updated_at
+		from inserted
+	`
+}
+
 func workerTaskUpdateReturningSQL(update string) string {
 	return `
 		update worker_tasks
@@ -341,6 +386,53 @@ func workerTaskUpdateReturningSQL(update string) string {
 		          coalesce(finished_at, '0001-01-01 00:00:00+00'::timestamptz),
 		          created_at, updated_at
 	`
+}
+
+func (s *PostgresStore) listBuildWorkers(ctx context.Context) ([]BuildWorkerAdmin, error) {
+	rows, err := s.db.Query(ctx, `
+		select id::text, worker_key, name, endpoint_url, labels, status,
+		       capacity, running_tasks,
+		       coalesce(last_seen_at, '0001-01-01 00:00:00+00'::timestamptz),
+		       metadata, created_at, updated_at
+		from build_workers
+		where tenant_id = 'default'
+		order by last_seen_at desc nulls last, updated_at desc, created_at desc
+		limit 100
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var workers []BuildWorkerAdmin
+	for rows.Next() {
+		worker, err := scanBuildWorker(rows)
+		if err != nil {
+			return nil, err
+		}
+		workers = append(workers, worker)
+	}
+	return workers, rows.Err()
+}
+
+func (s *PostgresStore) listWorkerTasks(ctx context.Context) ([]WorkerTaskAdmin, error) {
+	rows, err := s.db.Query(ctx, workerTaskSelectSQL()+`
+		where tenant_id = 'default'
+		order by updated_at desc, created_at desc
+		limit 100
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var tasks []WorkerTaskAdmin
+	for rows.Next() {
+		task, err := scanWorkerTask(rows)
+		if err != nil {
+			return nil, err
+		}
+		tasks = append(tasks, task)
+	}
+	return tasks, rows.Err()
 }
 
 func effectiveHeartbeatLabels(requested, stored []string) []string {

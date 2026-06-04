@@ -54,6 +54,17 @@ type WorkerTaskFailRequest struct {
 	Metadata     map[string]any `json:"metadata"`
 }
 
+type CreateWorkerTaskRequest struct {
+	ProjectKey     string         `json:"project_key"`
+	BuildProfileID string         `json:"build_profile_id"`
+	BuildRunID     string         `json:"build_run_id"`
+	TaskType       string         `json:"task_type"`
+	Action         string         `json:"action"`
+	RequiredLabels []string       `json:"required_labels"`
+	Priority       int            `json:"priority"`
+	Metadata       map[string]any `json:"metadata"`
+}
+
 type BuildWorkerAdmin struct {
 	ID           string          `json:"id"`
 	WorkerKey    string          `json:"worker_key"`
@@ -114,4 +125,10 @@ type WorkerActionResponse struct {
 type WorkerTaskNextResponse struct {
 	Task      *WorkerTaskAdmin `json:"task,omitempty"`
 	MessageZh string           `json:"message_zh,omitempty"`
+}
+
+type WorkerOverviewResponse struct {
+	Workers   []BuildWorkerAdmin `json:"workers"`
+	Tasks     []WorkerTaskAdmin  `json:"tasks"`
+	MessageZh string             `json:"message_zh,omitempty"`
 }

@@ -10,6 +10,29 @@ import (
 	"github.com/liut-coder/game-helper-server/internal/platform/httpx"
 )
 
+func (h *Handler) WorkerOverview(w http.ResponseWriter, r *http.Request) {
+	resp, err := h.service.WorkerOverview(r.Context())
+	if err != nil {
+		workerAPIError(w, r, err, "worker.overview_failed", "读取 Worker 失败")
+		return
+	}
+	httpx.JSON(w, http.StatusOK, resp)
+}
+
+func (h *Handler) CreateWorkerTask(w http.ResponseWriter, r *http.Request) {
+	var req CreateWorkerTaskRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		httpx.Error(w, r, http.StatusBadRequest, "request.invalid_json", "请求 JSON 格式不正确", nil)
+		return
+	}
+	resp, err := h.service.CreateWorkerTask(r.Context(), req)
+	if err != nil {
+		workerAPIError(w, r, err, "worker.task_create_failed", "创建 Worker 任务失败")
+		return
+	}
+	httpx.JSON(w, http.StatusAccepted, resp)
+}
+
 func (h *Handler) RegisterWorker(w http.ResponseWriter, r *http.Request) {
 	var req WorkerRegisterRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {

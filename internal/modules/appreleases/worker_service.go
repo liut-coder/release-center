@@ -10,6 +10,8 @@ import (
 var errWorkerStoreUnavailable = errors.New("worker store unavailable")
 
 type WorkerStore interface {
+	WorkerOverview(ctx context.Context) (WorkerOverviewResponse, error)
+	CreateWorkerTask(ctx context.Context, req CreateWorkerTaskRequest) (WorkerTaskAdmin, error)
 	RegisterWorker(ctx context.Context, req WorkerRegisterRequest) (BuildWorkerAdmin, error)
 	SaveWorkerHeartbeat(ctx context.Context, req WorkerHeartbeatRequest) (BuildWorkerAdmin, error)
 	NextWorkerTask(ctx context.Context, req WorkerTaskNextRequest) (*WorkerTaskAdmin, error)
@@ -17,6 +19,43 @@ type WorkerStore interface {
 	SaveWorkerTaskArtifacts(ctx context.Context, taskID string, req WorkerTaskArtifactsRequest) (WorkerTaskAdmin, error)
 	CompleteWorkerTask(ctx context.Context, taskID string, req WorkerTaskCompleteRequest) (WorkerTaskAdmin, error)
 	FailWorkerTask(ctx context.Context, taskID string, req WorkerTaskFailRequest) (WorkerTaskAdmin, error)
+}
+
+func (s *Service) WorkerOverview(ctx context.Context) (WorkerOverviewResponse, error) {
+	store, ok := s.store.(WorkerStore)
+	if !ok {
+		return WorkerOverviewResponse{Workers: []BuildWorkerAdmin{}, Tasks: []WorkerTaskAdmin{}, MessageZh: "Worker 未连接数据库"}, nil
+	}
+	overview, err := store.WorkerOverview(ctx)
+	if err != nil {
+		return WorkerOverviewResponse{}, err
+	}
+	overview.MessageZh = "Worker 接入已读取"
+	return overview, nil
+}
+
+func (s *Service) CreateWorkerTask(ctx context.Context, req CreateWorkerTaskRequest) (WorkerActionResponse, error) {
+	store, ok := s.store.(WorkerStore)
+	if !ok {
+		return WorkerActionResponse{}, errWorkerStoreUnavailable
+	}
+	req.ProjectKey = strings.TrimSpace(req.ProjectKey)
+	req.BuildProfileID = strings.TrimSpace(req.BuildProfileID)
+	req.BuildRunID = strings.TrimSpace(req.BuildRunID)
+	req.TaskType = strings.ToLower(strings.TrimSpace(firstNonBlank(req.TaskType, "build")))
+	req.Action = strings.ToLower(strings.TrimSpace(firstNonBlank(req.Action, "all")))
+	req.RequiredLabels = normalizeWorkerLabels(req.RequiredLabels)
+	if req.Priority < 0 {
+		req.Priority = 0
+	}
+	if req.TaskType == "" || req.Action == "" {
+		return WorkerActionResponse{}, fmt.Errorf("task_type and action are required")
+	}
+	task, err := store.CreateWorkerTask(ctx, req)
+	if err != nil {
+		return WorkerActionResponse{}, err
+	}
+	return WorkerActionResponse{OK: true, Task: &task, MessageZh: "Worker 任务已创建"}, nil
 }
 
 func (s *Service) RegisterWorker(ctx context.Context, req WorkerRegisterRequest) (WorkerActionResponse, error) {

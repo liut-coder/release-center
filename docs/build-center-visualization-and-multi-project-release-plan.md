@@ -215,6 +215,8 @@ POST /api/v1/workers/tasks/{task_id}/fail
 - Worker API 使用和 CI API 相同的机器 Bearer Token 保护。
 - 已支持 worker 注册、心跳、领取匹配标签的 queued task、日志 tail、产物 manifest、complete/fail 状态回传。
 - `worker_tasks.required_labels` 使用标签子集匹配，支持 Linux/Windows/Android/Docker/Cloudflare 等构建能力调度。
+- Admin API 支持查看 Worker 池和任务队列，并可从后台创建 queued worker task。
+- Admin 前端新增 Worker 接入页面，支持 Worker 状态、标签能力、任务队列和手工投递任务可视化。
 
 worker 通过标签匹配任务：
 
