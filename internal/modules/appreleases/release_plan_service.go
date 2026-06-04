@@ -70,6 +70,14 @@ func (s *Service) CreateReleaseUnit(ctx context.Context, req CreateReleaseUnitRe
 	if err != nil {
 		return nil, err
 	}
+	s.insertAudit(ctx, "release_unit.save", "release_unit", unit.ID, "保存发布单元", map[string]any{
+		"project_key":     unit.ProjectKey,
+		"project_id":      unit.ProjectID,
+		"unit_key":        unit.UnitKey,
+		"unit_type":       unit.UnitType,
+		"default_channel": unit.DefaultChannel,
+		"enabled":         unit.Enabled,
+	})
 	return map[string]any{"ok": true, "release_unit": unit, "message_zh": "发布单元已保存"}, nil
 }
 
@@ -111,6 +119,9 @@ func (s *Service) CreateReleasePlan(ctx context.Context, req CreateReleasePlanRe
 	if err != nil {
 		return ReleasePlanActionResponse{}, err
 	}
+	s.insertAudit(ctx, "release_plan.create", "release_plan", plan.ID, "创建发布计划", releasePlanAuditMetadata(plan, map[string]any{
+		"artifact_count": len(plan.Artifacts),
+	}))
 	return ReleasePlanActionResponse{OK: true, Plan: plan, MessageZh: "发布计划已创建"}, nil
 }
 
@@ -120,6 +131,7 @@ func (s *Service) ReleasePlanAction(ctx context.Context, planID, action string, 
 		return ReleasePlanActionResponse{}, errReleasePlanStoreUnavailable
 	}
 	planID = strings.TrimSpace(planID)
+	action = strings.TrimSpace(action)
 	req.ApprovedBy = strings.TrimSpace(req.ApprovedBy)
 	status := ""
 	message := "发布计划状态已更新"
@@ -140,6 +152,9 @@ func (s *Service) ReleasePlanAction(ctx context.Context, planID, action string, 
 	if err != nil {
 		return ReleasePlanActionResponse{}, err
 	}
+	s.insertAudit(ctx, "release_plan."+action, "release_plan", plan.ID, message, releasePlanAuditMetadata(plan, map[string]any{
+		"approved_by": req.ApprovedBy,
+	}))
 	return ReleasePlanActionResponse{OK: true, Plan: plan, MessageZh: message}, nil
 }
 
@@ -228,6 +243,19 @@ func (s *Service) CreateReleasePlanDeployment(ctx context.Context, planID string
 			tasks = append(tasks, task)
 		}
 	}
+	s.insertAudit(ctx, "release_plan.deploy", "release_plan", plan.ID, "创建发布计划部署", releasePlanAuditMetadata(plan, map[string]any{
+		"target_id":               req.TargetID,
+		"target_key":              req.TargetKey,
+		"dry_run":                 req.DryRun,
+		"triggered_by":            req.TriggeredBy,
+		"deployment_count":        len(records),
+		"deployment_record_ids":   deploymentRecordIDs(records),
+		"worker_task_count":       len(tasks),
+		"worker_task_ids":         workerTaskIDs(tasks),
+		"pending_approval_count":  pendingApproval,
+		"release_plan_artifacts":  len(plan.Artifacts),
+		"deployment_records_only": req.DryRun || pendingApproval > 0,
+	}))
 	return ReleasePlanDeploymentResponse{
 		OK:                true,
 		Plan:              plan,
@@ -245,6 +273,48 @@ func releasePlanDeploymentMessage(dryRun bool, pendingApproval int) string {
 		return fmt.Sprintf("发布计划部署记录已创建，%d 条生产部署等待审批", pendingApproval)
 	}
 	return "发布计划部署记录已创建并投递 Worker"
+}
+
+func releasePlanAuditMetadata(plan ReleasePlanAdmin, extra map[string]any) map[string]any {
+	metadata := map[string]any{
+		"project_key":        plan.ProjectKey,
+		"project_id":         plan.ProjectID,
+		"release_unit_id":    plan.ReleaseUnitID,
+		"unit_key":           plan.UnitKey,
+		"unit_type":          plan.UnitType,
+		"environment_id":     plan.EnvironmentID,
+		"environment_key":    plan.EnvironmentKey,
+		"plan_key":           plan.PlanKey,
+		"version_name":       plan.VersionName,
+		"build_number":       plan.BuildNumber,
+		"git_commit":         plan.GitCommit,
+		"channel":            plan.Channel,
+		"status":             plan.Status,
+		"rollout_percentage": plan.RolloutPercentage,
+		"target_type":        plan.TargetType,
+		"target_value":       plan.TargetValue,
+		"created_by":         plan.CreatedBy,
+	}
+	for key, value := range extra {
+		metadata[key] = value
+	}
+	return metadata
+}
+
+func deploymentRecordIDs(records []DeploymentRecordAdmin) []string {
+	ids := make([]string, 0, len(records))
+	for _, record := range records {
+		ids = append(ids, record.ID)
+	}
+	return ids
+}
+
+func workerTaskIDs(tasks []WorkerTaskAdmin) []string {
+	ids := make([]string, 0, len(tasks))
+	for _, task := range tasks {
+		ids = append(ids, task.ID)
+	}
+	return ids
 }
 
 func normalizeReleaseUnitType(unitType string) string {

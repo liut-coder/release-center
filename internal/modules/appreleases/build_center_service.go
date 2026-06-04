@@ -162,6 +162,12 @@ func (s *Service) CreateBuildCenterProject(ctx context.Context, req BuildCenterP
 	if err != nil {
 		return BuildCenterProjectActionResponse{}, err
 	}
+	s.insertAudit(ctx, "build_center.project_save", "build_center_project", project.ID, "保存构建项目", map[string]any{
+		"project_key":      project.ProjectKey,
+		"default_channel":  project.DefaultChannel,
+		"lifecycle_status": project.LifecycleStatus,
+		"owner_account":    project.OwnerAccount,
+	})
 	return BuildCenterProjectActionResponse{OK: true, Project: project, MessageZh: "构建项目已保存"}, nil
 }
 
@@ -184,6 +190,17 @@ func (s *Service) UpsertCodeRepository(ctx context.Context, projectKey string, r
 	if err != nil {
 		return CodeRepositoryActionResponse{}, err
 	}
+	s.insertAudit(ctx, "build_center.repository_save", "code_repository", repository.ID, "保存代码仓库", map[string]any{
+		"project_key":     projectKey,
+		"project_id":      repository.ProjectID,
+		"provider":        repository.Provider,
+		"repo_full_name":  repository.RepoFullName,
+		"repo_url":        repository.RepoURL,
+		"default_ref":     repository.DefaultRef,
+		"webhook_enabled": repository.WebhookEnabled,
+		"trigger_on_push": repository.TriggerOnPush,
+		"trigger_on_tag":  repository.TriggerOnTag,
+	})
 	return CodeRepositoryActionResponse{OK: true, Repository: repository, MessageZh: "代码仓库已保存"}, nil
 }
 
@@ -217,6 +234,17 @@ func (s *Service) UpsertBuildProfile(ctx context.Context, projectKey string, req
 	if err != nil {
 		return BuildProfileActionResponse{}, err
 	}
+	s.insertAudit(ctx, "build_center.profile_save", "build_profile", profile.ID, "保存构建配置", map[string]any{
+		"project_key":          projectKey,
+		"project_id":           profile.ProjectID,
+		"app_id":               profile.AppID,
+		"profile_key":          profile.ProfileKey,
+		"build_center_project": profile.BuildCenterProject,
+		"stack_type":           profile.StackType,
+		"build_type":           profile.BuildType,
+		"build_action":         profile.BuildAction,
+		"enabled":              profile.Enabled,
+	})
 	return BuildProfileActionResponse{OK: true, BuildProfile: profile, MessageZh: "构建配置已保存"}, nil
 }
 
@@ -241,6 +269,17 @@ func (s *Service) UpsertWebhookRoute(ctx context.Context, projectKey string, req
 	if err != nil {
 		return WebhookRouteActionResponse{}, err
 	}
+	s.insertAudit(ctx, "build_center.webhook_route_save", "webhook_route", route.ID, "保存 Webhook 路由", map[string]any{
+		"project_key":      projectKey,
+		"project_id":       route.ProjectID,
+		"repository_id":    route.RepositoryID,
+		"build_profile_id": route.BuildProfileID,
+		"profile_key":      route.ProfileKey,
+		"event_type":       route.EventType,
+		"ref_pattern":      route.RefPattern,
+		"action":           route.Action,
+		"enabled":          route.Enabled,
+	})
 	return WebhookRouteActionResponse{OK: true, WebhookRoute: route, MessageZh: "Webhook 路由已保存"}, nil
 }
 
@@ -257,6 +296,22 @@ func (s *Service) CreateBuildCenterRun(ctx context.Context, projectKey string, r
 	if err != nil {
 		return BuildCenterRunResponse{}, err
 	}
+	s.insertAudit(ctx, "build_center.run_create", "build_center_run", run.ID, "创建构建任务", map[string]any{
+		"project_key":          projectKey,
+		"project_id":           run.ProjectID,
+		"build_profile_id":     run.BuildProfileID,
+		"profile_key":          profile.ProfileKey,
+		"build_center_project": profile.BuildCenterProject,
+		"action":               run.Action,
+		"trigger_type":         run.TriggerType,
+		"trigger_source":       run.TriggerSource,
+		"git_ref":              run.GitRef,
+		"version_name":         run.VersionName,
+		"version_code":         run.VersionCode,
+		"build_number":         run.BuildNumber,
+		"channel":              run.Channel,
+		"started_by":           run.StartedBy,
+	})
 	go s.executeBuildCenterRun(run, profile, req)
 	return BuildCenterRunResponse{Run: run}, nil
 }

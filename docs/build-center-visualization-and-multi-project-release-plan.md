@@ -120,6 +120,7 @@ integration_credentials
 - Admin 前端新增制品中心页面，支持统一浏览、筛选、查看制品详情和复制发布/部署引用。
 - 发布计划创建表单已接入制品中心，可选择制品后自动带入版本、build number、commit、`immutable_ref` 和 build/run/artifact 关联 ID。
 - 发布计划已支持直接按目标创建部署记录；前端发布计划列表可选择部署目标并生成 dry-run 部署记录。
+- 发布单元保存、发布计划创建、publish/pause/rollback 状态动作和发布计划部署都会写入 `audit_events`。
 - 旧 APK 发布接口继续保留，后续再迁移成 Android 发布单元入口。
 
 ### 表职责
@@ -232,6 +233,7 @@ POST /api/v1/workers/tasks/{task_id}/fail
 - `releasectl worker-run` 已作为外部机器 agent 接入现有 Worker API，支持注册、心跳、领取任务、执行 `metadata.command` / `metadata.prepared_command`、回传日志和 complete/fail。
 - 部署中心已支持从当前部署记录回滚到同一目标上一条成功部署；dry-run 只落回滚记录，非 dry-run 会继续投递 Worker。
 - 部署目标保存、部署记录创建、完成、失败和回滚都会写 `audit_events`，用于审计部署链路。
+- 构建项目、代码仓库、构建 profile、Webhook 路由和手工构建任务创建都会写 `audit_events`，用于审计构建链路。
 - prod 非 dry-run 部署会先进入 `pending_approval`，审批通过后才投递 Worker。
 
 外部机器最小启动方式：
@@ -472,7 +474,7 @@ worker 注册
 当前已落地：
 
 - 部署记录已支持按同目标上一条成功记录生成回滚部署，并可 dry-run 或投递 Worker。
-- 部署目标保存、部署创建、完成、失败和回滚已写入 `audit_events`。
+- 构建中心配置/任务创建、发布单元/发布计划/发布计划部署、部署目标保存、部署创建、完成、失败和回滚已写入 `audit_events`。
 - prod 部署审批门禁已接入部署中心：非 dry-run 先落 `pending_approval` 记录，批准后投递 Worker。
 
 ## 9. 当前分支建议范围
@@ -545,5 +547,5 @@ origin=https://github.com/liut-coder/release-center.git
 - Cloudflare 真实执行器：提供 worker 侧 wrangler 执行脚本、凭据注入约定、Pages/Workers/R2 smoke。
 - GitHub 接入验收：配置 webhook secret/route enable，完成 push/tag 自动创建构建任务的真实仓库 smoke。
 - Android 发布单元迁移：把旧 APK 发布页收敛进统一 release unit，同时保留 update-check 兼容 API。
-- 审批/RBAC/审计：prod 部署审批、构建/发布/部署权限拦截、关键动作写 `audit_events`。
+- 审批/RBAC：构建/发布/部署权限拦截和角色权限矩阵验收。
 - 回滚执行闭环：基于上一条成功 `deployment_records` 或 `release_plans` 生成回滚计划并投递 Worker。

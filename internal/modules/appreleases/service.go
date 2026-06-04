@@ -20,6 +20,13 @@ func NewServiceWithStore(cfg Config, store Store) *Service {
 	return &Service{cfg: normalizeConfig(cfg), store: store}
 }
 
+func (s *Service) insertAudit(ctx context.Context, action, targetType, targetID, message string, metadata map[string]any) {
+	if s.store == nil {
+		return
+	}
+	_ = s.store.InsertAudit(ctx, action, targetType, targetID, message, metadata)
+}
+
 func (s *Service) SyncConfiguredRelease(ctx context.Context) error {
 	if s.store == nil {
 		return nil

@@ -300,10 +300,7 @@ func rollbackDeploymentMetadata(current, previous DeploymentRecordAdmin, req Rol
 }
 
 func (s *Service) insertDeploymentAudit(ctx context.Context, action, targetType, targetID, message string, metadata map[string]any) {
-	if s.store == nil {
-		return
-	}
-	_ = s.store.InsertAudit(ctx, action, targetType, targetID, message, metadata)
+	s.insertAudit(ctx, action, targetType, targetID, message, metadata)
 }
 
 func deploymentRecordAuditMetadata(record DeploymentRecordAdmin) map[string]any {
