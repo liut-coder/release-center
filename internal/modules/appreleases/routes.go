@@ -32,6 +32,10 @@ func (h *Handler) RoutesWithOptions(opts RouteOptions) chi.Router {
 		r.Post("/admin/api/apps/{app_id}/enable", h.AppAction("enable"))
 		r.Post("/admin/api/apps/{app_id}/disable", h.AppAction("disable"))
 
+		r.Get("/admin/api/build-center/projects", h.BuildCenterProjects)
+		r.Get("/admin/api/build-center/projects/{project_key}", h.BuildCenterProject)
+		r.Get("/admin/api/deployment-targets", h.DeploymentTargets)
+
 		r.Get("/admin/api/system/overview", h.SystemManagementOverview)
 		r.Get("/admin/api/system/users", h.SystemManagementOverview)
 		r.Post("/admin/api/system/users", h.CreateSystemUser)
