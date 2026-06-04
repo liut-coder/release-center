@@ -58,6 +58,12 @@ type RollbackDeploymentRequest struct {
 	Metadata    map[string]any `json:"metadata"`
 }
 
+type ApproveDeploymentRequest struct {
+	ApprovedBy string         `json:"approved_by"`
+	Comment    string         `json:"comment"`
+	Metadata   map[string]any `json:"metadata"`
+}
+
 type DeploymentRecordAdmin struct {
 	ID                   string          `json:"id"`
 	TargetID             string          `json:"target_id"`

@@ -131,6 +131,14 @@ func (s *PostgresStore) CreateDeploymentRecord(ctx context.Context, req CreateDe
 			metadata["prepared_command"] = command
 		}
 	}
+	if deploymentTargetRequiresApproval(target, req) {
+		req.ProviderStatus = "pending_approval"
+		metadata = mergeMaps(metadata, map[string]any{
+			"approval_required": true,
+			"approval_status":   "pending",
+			"approval_reason":   "prod deployment requires approval",
+		})
+	}
 	logTail := req.LogTail
 	if req.DryRun && len(logTail) == 0 {
 		logTail = []string{"dry-run deployment record created"}
@@ -141,6 +149,24 @@ func (s *PostgresStore) CreateDeploymentRecord(ctx context.Context, req CreateDe
 		target.Provider, req.ExternalDeploymentID, req.ProviderStatus, req.DeploymentURL,
 		req.VersionName, req.BuildNumber, req.GitCommit, req.TriggeredBy,
 		startedAt, finishedAt, logTail, req.ErrorMessage, jsonb(metadata))
+	return scanDeploymentRecord(row)
+}
+
+func (s *PostgresStore) ApproveDeploymentRecord(ctx context.Context, deploymentID string, req ApproveDeploymentRequest) (DeploymentRecordAdmin, error) {
+	metadata := mergeMaps(req.Metadata, map[string]any{
+		"approval_status":  "approved",
+		"approved_by":      req.ApprovedBy,
+		"approval_comment": req.Comment,
+	})
+	row := s.db.QueryRow(ctx, deploymentRecordUpdateReturningSQL(`
+		set provider_status = 'queued',
+		    error_message = '',
+		    metadata = metadata || $2::jsonb,
+		    updated_at = now()
+		where dr.tenant_id = 'default'
+		  and dr.id = $1::uuid
+		  and dr.provider_status = 'pending_approval'
+	`), deploymentID, jsonb(metadata))
 	return scanDeploymentRecord(row)
 }
 
@@ -159,6 +185,16 @@ func (s *PostgresStore) UpdateDeploymentRecordStatus(ctx context.Context, deploy
 	`), deploymentID, req.ExternalDeploymentID, req.ProviderStatus, req.DeploymentURL,
 		req.LogTail, req.ErrorMessage, jsonb(req.Metadata))
 	return scanDeploymentRecord(row)
+}
+
+func deploymentTargetRequiresApproval(target DeploymentTargetAdmin, req CreateDeploymentRequest) bool {
+	if req.DryRun {
+		return false
+	}
+	if normalizeDeploymentEnvironment(target.Environment) != "prod" {
+		return false
+	}
+	return stringFromAny(req.Metadata["approval_status"]) != "approved"
 }
 
 func (s *PostgresStore) deploymentTargetForRequest(ctx context.Context, targetID, projectKey, targetKey string) (DeploymentTargetAdmin, error) {

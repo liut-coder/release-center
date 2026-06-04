@@ -17,6 +17,7 @@ type DeploymentStore interface {
 	PreviousSuccessfulDeploymentRecord(ctx context.Context, deploymentID string) (DeploymentRecordAdmin, error)
 	CreateDeploymentRecord(ctx context.Context, req CreateDeploymentRequest) (DeploymentRecordAdmin, error)
 	UpdateDeploymentRecordStatus(ctx context.Context, deploymentID string, req UpdateDeploymentStatusRequest) (DeploymentRecordAdmin, error)
+	ApproveDeploymentRecord(ctx context.Context, deploymentID string, req ApproveDeploymentRequest) (DeploymentRecordAdmin, error)
 }
 
 func (s *Service) CreateDeploymentTarget(ctx context.Context, req CreateDeploymentTargetRequest) (DeploymentActionResponse, error) {
@@ -104,7 +105,9 @@ func (s *Service) CreateDeployment(ctx context.Context, req CreateDeploymentRequ
 		return DeploymentActionResponse{}, err
 	}
 	resp := DeploymentActionResponse{OK: true, Record: &record, MessageZh: "部署记录已创建"}
-	if !req.DryRun {
+	if record.ProviderStatus == "pending_approval" {
+		resp.MessageZh = "生产部署记录已创建，等待审批"
+	} else if !req.DryRun {
 		task, err := s.enqueueDeploymentWorkerTask(ctx, record, req)
 		if err != nil {
 			return DeploymentActionResponse{}, err
@@ -119,6 +122,42 @@ func (s *Service) CreateDeployment(ctx context.Context, req CreateDeploymentRequ
 		auditMetadata["worker_task_id"] = resp.WorkerTask.ID
 	}
 	s.insertDeploymentAudit(ctx, "deployment.create", "deployment_record", record.ID, "创建部署记录", auditMetadata)
+	return resp, nil
+}
+
+func (s *Service) ApproveDeployment(ctx context.Context, deploymentID string, req ApproveDeploymentRequest) (DeploymentActionResponse, error) {
+	store, ok := s.store.(DeploymentStore)
+	if !ok {
+		return DeploymentActionResponse{}, errDeploymentStoreUnavailable
+	}
+	deploymentID = strings.TrimSpace(deploymentID)
+	req.ApprovedBy = strings.TrimSpace(firstNonBlank(req.ApprovedBy, "admin"))
+	req.Comment = strings.TrimSpace(req.Comment)
+	if deploymentID == "" {
+		return DeploymentActionResponse{}, fmt.Errorf("deployment_id is required")
+	}
+	current, err := store.DeploymentRecord(ctx, deploymentID)
+	if err != nil {
+		return DeploymentActionResponse{}, err
+	}
+	if current.ProviderStatus != "pending_approval" {
+		return DeploymentActionResponse{}, fmt.Errorf("deployment is not pending approval")
+	}
+	record, err := store.ApproveDeploymentRecord(ctx, deploymentID, req)
+	if err != nil {
+		return DeploymentActionResponse{}, err
+	}
+	resp := DeploymentActionResponse{OK: true, Record: &record, MessageZh: "部署已批准并投递 Worker"}
+	task, err := s.enqueueDeploymentWorkerTask(ctx, record, CreateDeploymentRequest{Metadata: req.Metadata})
+	if err != nil {
+		return DeploymentActionResponse{}, err
+	}
+	resp.WorkerTask = &task
+	metadata := deploymentRecordAuditMetadata(record)
+	metadata["approved_by"] = req.ApprovedBy
+	metadata["approval_comment"] = req.Comment
+	metadata["worker_task_id"] = task.ID
+	s.insertDeploymentAudit(ctx, "deployment.approve", "deployment_record", record.ID, "批准生产部署", metadata)
 	return resp, nil
 }
 
@@ -307,11 +346,15 @@ func normalizeDeploymentEnvironment(environment string) string {
 func normalizeDeploymentStatus(status string) string {
 	status = strings.ToLower(strings.TrimSpace(status))
 	switch status {
-	case "queued", "running", "success", "failed", "canceled", "dry_run", "external":
+	case "queued", "pending_approval", "running", "success", "failed", "canceled", "dry_run", "external":
 		return status
 	default:
 		return "queued"
 	}
+}
+
+func deploymentPendingApproval(record DeploymentRecordAdmin) bool {
+	return record.ProviderStatus == "pending_approval"
 }
 
 func mergeMaps(base map[string]any, extra map[string]any) map[string]any {

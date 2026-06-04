@@ -4,6 +4,7 @@ import { CheckCircle2, Cloud, History, Play, RefreshCw, Server, TerminalSquare, 
 import { getArtifactCenterOverview, type ArtifactCenterItem } from "@/api/artifacts";
 import { getBuildCenterOverview } from "@/api/buildCenter";
 import {
+  approveDeployment,
   completeDeployment,
   createDeployment,
   createDeploymentTarget,
@@ -179,6 +180,21 @@ export function DeploymentCenterPage() {
     onError: (error) => showDeploymentError(error, "完成部署失败", setMessage, setMessageTone),
   });
 
+  const approveMutation = useMutation({
+    mutationFn: (record: DeploymentRecord) =>
+      approveDeployment(record.id, {
+        approved_by: "admin-web",
+        comment: "approved from deployment center",
+        metadata: { source: "admin_web", ui: "deployment_center" },
+      }),
+    onSuccess: async (result) => {
+      setMessage(result.message_zh || `部署已批准：${shortId(result.record.id)}`);
+      setMessageTone("success");
+      await recordsQuery.refetch();
+    },
+    onError: (error) => showDeploymentError(error, "批准部署失败", setMessage, setMessageTone),
+  });
+
   const failMutation = useMutation({
     mutationFn: (record: DeploymentRecord) =>
       failDeployment(record.id, {
@@ -211,11 +227,18 @@ export function DeploymentCenterPage() {
     onError: (error) => showDeploymentError(error, "创建回滚部署失败", setMessage, setMessageTone),
   });
 
-  const mutationError = createTargetMutation.error || createDeploymentMutation.error || completeMutation.error || failMutation.error || rollbackMutation.error;
+  const mutationError =
+    createTargetMutation.error ||
+    createDeploymentMutation.error ||
+    completeMutation.error ||
+    approveMutation.error ||
+    failMutation.error ||
+    rollbackMutation.error;
   const busy =
     createTargetMutation.isPending ||
     createDeploymentMutation.isPending ||
     completeMutation.isPending ||
+    approveMutation.isPending ||
     failMutation.isPending ||
     rollbackMutation.isPending;
 
@@ -388,7 +411,20 @@ export function DeploymentCenterPage() {
                 label="筛选"
                 value={filter}
                 onChange={setFilter}
-                options={["全部", "prod", "staging", "dev", "dry_run", "running", "success", "failed", "cloudflare_pages", "cloudflare_worker", "cloudflare_r2"]}
+                options={[
+                  "全部",
+                  "prod",
+                  "staging",
+                  "dev",
+                  "pending_approval",
+                  "dry_run",
+                  "running",
+                  "success",
+                  "failed",
+                  "cloudflare_pages",
+                  "cloudflare_worker",
+                  "cloudflare_r2",
+                ]}
               />
               <div className="flex items-center justify-end">
                 <Badge>{filteredRecords.length} / {records.length} 条</Badge>
@@ -398,6 +434,7 @@ export function DeploymentCenterPage() {
               records={filteredRecords}
               busy={busy}
               onComplete={(record) => completeMutation.mutate(record)}
+              onApprove={(record) => approveMutation.mutate(record)}
               onFail={(record) => failMutation.mutate(record)}
               onRollback={(record) => rollbackMutation.mutate(record)}
             />
@@ -445,12 +482,14 @@ function DeploymentRecordsTable({
   records,
   busy,
   onComplete,
+  onApprove,
   onFail,
   onRollback,
 }: {
   records: DeploymentRecord[];
   busy: boolean;
   onComplete: (record: DeploymentRecord) => void;
+  onApprove: (record: DeploymentRecord) => void;
   onFail: (record: DeploymentRecord) => void;
   onRollback: (record: DeploymentRecord) => void;
 }) {
@@ -503,6 +542,9 @@ function DeploymentRecordsTable({
                   <Button variant="secondary" size="sm" disabled={busy || !active} onClick={() => onComplete(record)}>
                     完成
                   </Button>
+                  <Button variant="secondary" size="sm" disabled={busy || record.provider_status !== "pending_approval"} onClick={() => onApprove(record)}>
+                    批准
+                  </Button>
                   <Button variant="secondary" size="sm" disabled={busy || record.provider_status === "failed"} onClick={() => onFail(record)}>
                     失败
                   </Button>
@@ -525,7 +567,7 @@ function DeploymentRecordsTable({
 }
 
 function canRollbackDeployment(record: DeploymentRecord) {
-  return !["queued", "running"].includes(record.provider_status);
+  return !["queued", "pending_approval", "running"].includes(record.provider_status);
 }
 
 function Select({
@@ -660,7 +702,7 @@ function deploymentMetrics(targets: DeploymentTarget[], records: DeploymentRecor
 }
 
 function hasActiveDeployments(records: DeploymentRecord[]) {
-  return records.some((record) => record.provider_status === "queued" || record.provider_status === "running");
+  return records.some((record) => record.provider_status === "queued" || record.provider_status === "pending_approval" || record.provider_status === "running");
 }
 
 function preparedCommand(record: DeploymentRecord) {
@@ -696,7 +738,7 @@ function firstNonEmpty(...values: Array<string | undefined>) {
 function deploymentStatusTone(status?: DeploymentStatus): "default" | "success" | "warning" | "danger" {
   if (status === "success") return "success";
   if (status === "failed" || status === "canceled") return "danger";
-  if (status === "queued" || status === "running" || status === "dry_run" || status === "external") return "warning";
+  if (status === "queued" || status === "pending_approval" || status === "running" || status === "dry_run" || status === "external") return "warning";
   return "default";
 }
 
@@ -704,6 +746,7 @@ function deploymentStatusLabel(status?: DeploymentStatus) {
   return (
     {
       queued: "排队",
+      pending_approval: "待审批",
       running: "运行中",
       success: "成功",
       failed: "失败",

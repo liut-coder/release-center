@@ -172,6 +172,7 @@ func (s *Service) CreateReleasePlanDeployment(ctx context.Context, planID string
 	}
 	records := make([]DeploymentRecordAdmin, 0, len(plan.Artifacts))
 	tasks := make([]WorkerTaskAdmin, 0, len(plan.Artifacts))
+	pendingApproval := 0
 	for _, artifact := range plan.Artifacts {
 		metadata := mergeMaps(req.Metadata, map[string]any{
 			"source":            "release_plan",
@@ -215,6 +216,10 @@ func (s *Service) CreateReleasePlanDeployment(ctx context.Context, planID string
 			return ReleasePlanDeploymentResponse{}, err
 		}
 		records = append(records, record)
+		if record.ProviderStatus == "pending_approval" {
+			pendingApproval++
+			continue
+		}
 		if !req.DryRun {
 			task, err := s.enqueueDeploymentWorkerTask(ctx, record, deployReq)
 			if err != nil {
@@ -228,13 +233,16 @@ func (s *Service) CreateReleasePlanDeployment(ctx context.Context, planID string
 		Plan:              plan,
 		DeploymentRecords: records,
 		WorkerTasks:       tasks,
-		MessageZh:         releasePlanDeploymentMessage(req.DryRun),
+		MessageZh:         releasePlanDeploymentMessage(req.DryRun, pendingApproval),
 	}, nil
 }
 
-func releasePlanDeploymentMessage(dryRun bool) string {
+func releasePlanDeploymentMessage(dryRun bool, pendingApproval int) string {
 	if dryRun {
 		return "发布计划部署记录已创建"
+	}
+	if pendingApproval > 0 {
+		return fmt.Sprintf("发布计划部署记录已创建，%d 条生产部署等待审批", pendingApproval)
 	}
 	return "发布计划部署记录已创建并投递 Worker"
 }

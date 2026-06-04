@@ -202,6 +202,7 @@ POST /admin/api/deployment-targets
 POST /admin/api/deployments
 GET  /admin/api/deployments
 GET  /admin/api/deployments/{deployment_id}
+POST /admin/api/deployments/{deployment_id}/approve
 POST /admin/api/deployments/{deployment_id}/rollback
 ```
 
@@ -231,6 +232,7 @@ POST /api/v1/workers/tasks/{task_id}/fail
 - `releasectl worker-run` 已作为外部机器 agent 接入现有 Worker API，支持注册、心跳、领取任务、执行 `metadata.command` / `metadata.prepared_command`、回传日志和 complete/fail。
 - 部署中心已支持从当前部署记录回滚到同一目标上一条成功部署；dry-run 只落回滚记录，非 dry-run 会继续投递 Worker。
 - 部署目标保存、部署记录创建、完成、失败和回滚都会写 `audit_events`，用于审计部署链路。
+- prod 非 dry-run 部署会先进入 `pending_approval`，审批通过后才投递 Worker。
 
 外部机器最小启动方式：
 
@@ -471,6 +473,7 @@ worker 注册
 
 - 部署记录已支持按同目标上一条成功记录生成回滚部署，并可 dry-run 或投递 Worker。
 - 部署目标保存、部署创建、完成、失败和回滚已写入 `audit_events`。
+- prod 部署审批门禁已接入部署中心：非 dry-run 先落 `pending_approval` 记录，批准后投递 Worker。
 
 ## 9. 当前分支建议范围
 

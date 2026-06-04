@@ -46,8 +46,27 @@ func TestNormalizeDeploymentStatus(t *testing.T) {
 	if got := normalizeDeploymentStatus(" SUCCESS "); got != "success" {
 		t.Fatalf("expected success, got %q", got)
 	}
+	if got := normalizeDeploymentStatus(" pending_approval "); got != "pending_approval" {
+		t.Fatalf("expected pending_approval, got %q", got)
+	}
 	if got := normalizeDeploymentStatus("unknown"); got != "queued" {
 		t.Fatalf("expected fallback queued, got %q", got)
+	}
+}
+
+func TestDeploymentTargetRequiresApproval(t *testing.T) {
+	target := DeploymentTargetAdmin{Environment: "prod"}
+	if !deploymentTargetRequiresApproval(target, CreateDeploymentRequest{}) {
+		t.Fatal("expected prod deployment to require approval")
+	}
+	if deploymentTargetRequiresApproval(target, CreateDeploymentRequest{DryRun: true}) {
+		t.Fatal("dry-run should not require approval")
+	}
+	if deploymentTargetRequiresApproval(DeploymentTargetAdmin{Environment: "staging"}, CreateDeploymentRequest{}) {
+		t.Fatal("staging should not require approval")
+	}
+	if deploymentTargetRequiresApproval(target, CreateDeploymentRequest{Metadata: map[string]any{"approval_status": "approved"}}) {
+		t.Fatal("approved deployment should not require approval again")
 	}
 }
 
@@ -132,6 +151,81 @@ func TestCreateDeploymentDoesNotEnqueueWorkerForDryRun(t *testing.T) {
 	}
 	if store.auditEvents[0].Metadata["dry_run"] != true {
 		t.Fatalf("dry_run missing from audit metadata: %#v", store.auditEvents[0].Metadata)
+	}
+}
+
+func TestCreateDeploymentWaitsForApproval(t *testing.T) {
+	store := &deploymentDispatchStore{
+		record: DeploymentRecordAdmin{
+			ID:             "deployment-approval",
+			TargetID:       "target-1",
+			Provider:       "cloudflare_pages",
+			Environment:    "prod",
+			ProviderStatus: "pending_approval",
+		},
+	}
+	service := &Service{store: store}
+
+	resp, err := service.CreateDeployment(context.Background(), CreateDeploymentRequest{
+		TargetID:    "target-1",
+		VersionName: "1.2.3",
+		DryRun:      false,
+	})
+	if err != nil {
+		t.Fatalf("CreateDeployment() error = %v", err)
+	}
+	if resp.WorkerTask != nil || len(store.workerRequests) != 0 {
+		t.Fatalf("pending approval deployment should not enqueue worker: resp=%#v requests=%#v", resp, store.workerRequests)
+	}
+	if resp.MessageZh != "生产部署记录已创建，等待审批" {
+		t.Fatalf("unexpected message: %q", resp.MessageZh)
+	}
+}
+
+func TestApproveDeploymentEnqueuesWorker(t *testing.T) {
+	store := &deploymentDispatchStore{
+		currentRecord: DeploymentRecordAdmin{
+			ID:             "deployment-approval",
+			TargetID:       "target-1",
+			TargetKey:      "pages",
+			Provider:       "cloudflare_pages",
+			Environment:    "prod",
+			ProviderStatus: "pending_approval",
+			Metadata:       []byte(`{"prepared_command":["wrangler","pages","deploy","dist"]}`),
+		},
+		approvedRecord: DeploymentRecordAdmin{
+			ID:             "deployment-approval",
+			TargetID:       "target-1",
+			TargetKey:      "pages",
+			Provider:       "cloudflare_pages",
+			Environment:    "prod",
+			ProviderStatus: "queued",
+			Metadata:       []byte(`{"prepared_command":["wrangler","pages","deploy","dist"],"approval_status":"approved"}`),
+		},
+	}
+	service := &Service{store: store}
+
+	resp, err := service.ApproveDeployment(context.Background(), "deployment-approval", ApproveDeploymentRequest{
+		ApprovedBy: "release-admin",
+		Comment:    "ship it",
+	})
+	if err != nil {
+		t.Fatalf("ApproveDeployment() error = %v", err)
+	}
+	if resp.WorkerTask == nil {
+		t.Fatalf("expected worker task after approval")
+	}
+	if len(store.approvalRequests) != 1 || store.approvalRequests[0].ApprovedBy != "release-admin" {
+		t.Fatalf("approval request not captured: %#v", store.approvalRequests)
+	}
+	if len(store.workerRequests) != 1 {
+		t.Fatalf("expected one worker request, got %d", len(store.workerRequests))
+	}
+	if len(store.auditEvents) != 1 || store.auditEvents[0].Action != "deployment.approve" {
+		t.Fatalf("expected deployment.approve audit, got %#v", store.auditEvents)
+	}
+	if store.auditEvents[0].Metadata["approved_by"] != "release-admin" {
+		t.Fatalf("approved_by missing from audit metadata: %#v", store.auditEvents[0].Metadata)
 	}
 }
 
@@ -277,7 +371,9 @@ type deploymentDispatchStore struct {
 	record             DeploymentRecordAdmin
 	currentRecord      DeploymentRecordAdmin
 	previousRecord     DeploymentRecordAdmin
+	approvedRecord     DeploymentRecordAdmin
 	deploymentRequests []CreateDeploymentRequest
+	approvalRequests   []ApproveDeploymentRequest
 	workerRequests     []CreateWorkerTaskRequest
 	auditEvents        []deploymentAuditEvent
 }
@@ -293,6 +389,11 @@ func (s *deploymentDispatchStore) DeploymentRecord(ctx context.Context, deployme
 
 func (s *deploymentDispatchStore) PreviousSuccessfulDeploymentRecord(ctx context.Context, deploymentID string) (DeploymentRecordAdmin, error) {
 	return s.previousRecord, nil
+}
+
+func (s *deploymentDispatchStore) ApproveDeploymentRecord(ctx context.Context, deploymentID string, req ApproveDeploymentRequest) (DeploymentRecordAdmin, error) {
+	s.approvalRequests = append(s.approvalRequests, req)
+	return s.approvedRecord, nil
 }
 
 func (s *deploymentDispatchStore) CreateWorkerTask(ctx context.Context, req CreateWorkerTaskRequest) (WorkerTaskAdmin, error) {

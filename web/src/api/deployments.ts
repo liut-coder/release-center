@@ -2,7 +2,7 @@ import { apiRequest } from "@/api/client";
 import type { WorkerTask } from "@/api/workers";
 
 export type DeploymentProvider = "cloudflare_pages" | "cloudflare_worker" | "cloudflare_r2" | "generic_webhook" | "ssh" | "docker" | "kubernetes" | string;
-export type DeploymentStatus = "queued" | "running" | "success" | "failed" | "canceled" | "dry_run" | "external" | string;
+export type DeploymentStatus = "queued" | "pending_approval" | "running" | "success" | "failed" | "canceled" | "dry_run" | "external" | string;
 
 export interface DeploymentTarget {
   id: string;
@@ -105,6 +105,12 @@ export interface RollbackDeploymentPayload {
   metadata?: Record<string, unknown>;
 }
 
+export interface ApproveDeploymentPayload {
+  approved_by?: string;
+  comment?: string;
+  metadata?: Record<string, unknown>;
+}
+
 export function getDeploymentTargets() {
   return apiRequest<{ deployment_targets: DeploymentTarget[] }>("/admin/api/deployment-targets");
 }
@@ -130,6 +136,16 @@ export function createDeployment(payload: CreateDeploymentPayload) {
 export function completeDeployment(deploymentId: string, payload: UpdateDeploymentStatusPayload = {}) {
   return apiRequest<{ ok: boolean; record: DeploymentRecord; message_zh?: string }>(
     `/admin/api/deployments/${encodeURIComponent(deploymentId)}/complete`,
+    {
+      method: "POST",
+      body: JSON.stringify(payload),
+    },
+  );
+}
+
+export function approveDeployment(deploymentId: string, payload: ApproveDeploymentPayload = {}) {
+  return apiRequest<{ ok: boolean; record: DeploymentRecord; worker_task?: WorkerTask; message_zh?: string }>(
+    `/admin/api/deployments/${encodeURIComponent(deploymentId)}/approve`,
     {
       method: "POST",
       body: JSON.stringify(payload),
