@@ -3,6 +3,7 @@ package appreleases
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 
 	"github.com/jackc/pgx/v5"
 )
@@ -65,6 +66,180 @@ func (s *PostgresStore) DeploymentTargets(ctx context.Context) ([]DeploymentTarg
 		targets = append(targets, item)
 	}
 	return targets, rows.Err()
+}
+
+func (s *PostgresStore) CreateBuildCenterRun(ctx context.Context, projectKey string, req BuildCenterRunRequest) (BuildCenterRunAdmin, BuildProfileAdmin, error) {
+	profile, err := s.buildProfileForRun(ctx, projectKey, req.ProfileKey)
+	if err != nil {
+		return BuildCenterRunAdmin{}, BuildProfileAdmin{}, err
+	}
+	action := firstNonBlank(req.Action, profile.BuildAction, "all")
+	gitRef := firstNonBlank(req.GitRef, profile.DefaultRef)
+	versionName := firstNonBlank(req.VersionName, profile.DefaultVersionName)
+	versionCode := req.VersionCode
+	if versionCode <= 0 {
+		versionCode = profile.DefaultVersionCode
+	}
+	channel := firstNonBlank(req.Channel, profile.DefaultChannel, "dev")
+	startedBy := firstNonBlank(req.StartedBy, "admin")
+
+	var run BuildCenterRunAdmin
+	err = s.db.QueryRow(ctx, `
+		insert into build_center_runs (
+		  tenant_id, project_id, build_profile_id, trigger_type, trigger_source,
+		  action, git_ref, version_name, version_code, channel, status,
+		  started_by, upload_status, metadata
+		)
+		values (
+		  'default', $1::uuid, $2::uuid, 'manual', 'admin',
+		  $3, $4, $5, $6, $7, 'queued',
+		  $8, 'pending', $9
+		)
+		returning id::text, project_id::text, build_profile_id::text, trigger_type,
+		          trigger_source, action, git_ref, git_commit, version_name, version_code,
+		          build_number, channel, status, coalesce(exit_code, 0), started_by,
+		          coalesce(started_at, '0001-01-01 00:00:00+00'::timestamptz),
+		          coalesce(finished_at, '0001-01-01 00:00:00+00'::timestamptz),
+		          duration_ms, workspace_dir, artifact_dir, log_dir, manifest_path,
+		          upload_status, error_message, metadata, created_at, updated_at
+	`, profile.ProjectID, profile.ID, action, gitRef, versionName, versionCode, channel, startedBy,
+		jsonb(map[string]any{
+			"profile_key": profile.ProfileKey,
+			"source":      "admin_api",
+		})).Scan(
+		&run.ID, &run.ProjectID, &run.BuildProfileID, &run.TriggerType,
+		&run.TriggerSource, &run.Action, &run.GitRef, &run.GitCommit, &run.VersionName,
+		&run.VersionCode, &run.BuildNumber, &run.Channel, &run.Status, &run.ExitCode,
+		&run.StartedBy, &run.StartedAt, &run.FinishedAt, &run.DurationMS,
+		&run.WorkspaceDir, &run.ArtifactDir, &run.LogDir, &run.ManifestPath,
+		&run.UploadStatus, &run.ErrorMessage, &run.Metadata, &run.CreatedAt, &run.UpdatedAt,
+	)
+	if err != nil {
+		return BuildCenterRunAdmin{}, BuildProfileAdmin{}, err
+	}
+	return run, profile, nil
+}
+
+func (s *PostgresStore) MarkBuildCenterRunStarted(ctx context.Context, runID, logDir string) error {
+	_, err := s.db.Exec(ctx, `
+		update build_center_runs
+		set status = 'running',
+		    started_at = coalesce(started_at, now()),
+		    log_dir = $2,
+		    updated_at = now()
+		where tenant_id = 'default' and id = $1::uuid
+	`, runID, logDir)
+	return err
+}
+
+func (s *PostgresStore) CompleteBuildCenterRun(ctx context.Context, runID string, patch BuildCenterRunPatch) (BuildCenterRunAdmin, error) {
+	if patch.UploadStatus == "" {
+		patch.UploadStatus = "pending"
+	}
+	var run BuildCenterRunAdmin
+	var metadata []byte
+	err := s.db.QueryRow(ctx, `
+		update build_center_runs
+		set status = $2,
+		    exit_code = $3,
+		    git_commit = coalesce(nullif($4, ''), git_commit),
+		    version_name = coalesce(nullif($5, ''), version_name),
+		    version_code = case when $6 > 0 then $6 else version_code end,
+		    build_number = case when $7 > 0 then $7 else build_number end,
+		    artifact_dir = coalesce(nullif($8, ''), artifact_dir),
+		    log_dir = coalesce(nullif($9, ''), log_dir),
+		    manifest_path = coalesce(nullif($10, ''), manifest_path),
+		    upload_status = $11,
+		    error_message = $12,
+		    duration_ms = $13,
+		    finished_at = now(),
+		    metadata = metadata || $14::jsonb,
+		    updated_at = now()
+		where tenant_id = 'default' and id = $1::uuid
+		returning id::text, project_id::text, coalesce(build_profile_id::text, ''),
+		          coalesce(app_build_id::text, ''), trigger_type, trigger_source, action,
+		          git_ref, git_commit, version_name, version_code, build_number,
+		          channel, status, coalesce(exit_code, 0), started_by,
+		          coalesce(started_at, '0001-01-01 00:00:00+00'::timestamptz),
+		          coalesce(finished_at, '0001-01-01 00:00:00+00'::timestamptz),
+		          duration_ms, workspace_dir, artifact_dir, log_dir, manifest_path,
+		          upload_status, error_message, metadata, created_at, updated_at
+	`, runID, patch.Status, patch.ExitCode, patch.GitCommit, patch.VersionName,
+		patch.VersionCode, patch.BuildNumber, patch.ArtifactDir, patch.LogDir,
+		patch.ManifestPath, patch.UploadStatus, patch.ErrorMessage, patch.DurationMS,
+		jsonb(patch.Metadata)).Scan(
+		&run.ID, &run.ProjectID, &run.BuildProfileID, &run.AppBuildID, &run.TriggerType,
+		&run.TriggerSource, &run.Action, &run.GitRef, &run.GitCommit, &run.VersionName,
+		&run.VersionCode, &run.BuildNumber, &run.Channel, &run.Status, &run.ExitCode,
+		&run.StartedBy, &run.StartedAt, &run.FinishedAt, &run.DurationMS,
+		&run.WorkspaceDir, &run.ArtifactDir, &run.LogDir, &run.ManifestPath,
+		&run.UploadStatus, &run.ErrorMessage, &metadata, &run.CreatedAt, &run.UpdatedAt,
+	)
+	if err != nil {
+		return BuildCenterRunAdmin{}, err
+	}
+	run.Metadata = rawJSON(metadata, "{}")
+	return run, nil
+}
+
+func (s *PostgresStore) ReplaceBuildCenterRunArtifacts(ctx context.Context, runID string, artifacts []BuildCenterRunArtifact) error {
+	tx, err := s.db.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+	if _, err := tx.Exec(ctx, `delete from build_center_run_artifacts where tenant_id = 'default' and run_id = $1::uuid`, runID); err != nil {
+		return err
+	}
+	for _, artifact := range artifacts {
+		if _, err := tx.Exec(ctx, `
+			insert into build_center_run_artifacts (
+			  tenant_id, run_id, name, artifact_type, file_name, local_path,
+			  size_bytes, sha256, upload_status, download_url, metadata
+			)
+			values ('default', $1::uuid, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+		`, runID, artifact.Name, artifact.ArtifactType, artifact.FileName, artifact.LocalPath,
+			artifact.SizeBytes, artifact.SHA256, artifact.UploadStatus, artifact.DownloadURL,
+			jsonb(map[string]any{"source": "buildctl_status"})); err != nil {
+			return err
+		}
+	}
+	return tx.Commit(ctx)
+}
+
+func (s *PostgresStore) buildProfileForRun(ctx context.Context, projectKey, profileKey string) (BuildProfileAdmin, error) {
+	if profileKey == "" {
+		profileKey = "default"
+	}
+	var item BuildProfileAdmin
+	var commands, artifactRules, metadata []byte
+	err := s.db.QueryRow(ctx, `
+		select bp.id::text, bp.project_id::text, coalesce(bp.app_id::text, ''),
+		       bp.profile_key, bp.name, bp.build_center_project, bp.stack_type,
+		       bp.build_type, bp.config_path, bp.source_workdir, bp.default_ref,
+		       bp.default_version_name, bp.default_version_code, bp.default_channel,
+		       bp.build_action, bp.commands, bp.artifact_rules, bp.enabled,
+		       bp.metadata, bp.created_at, bp.updated_at
+		from build_profiles bp
+		join release_projects p on p.id = bp.project_id and p.tenant_id = bp.tenant_id
+		where bp.tenant_id = 'default'
+		  and p.project_key = $1
+		  and bp.profile_key = $2
+		  and bp.enabled = true
+	`, projectKey, profileKey).Scan(
+		&item.ID, &item.ProjectID, &item.AppID, &item.ProfileKey, &item.Name,
+		&item.BuildCenterProject, &item.StackType, &item.BuildType, &item.ConfigPath,
+		&item.SourceWorkdir, &item.DefaultRef, &item.DefaultVersionName,
+		&item.DefaultVersionCode, &item.DefaultChannel, &item.BuildAction,
+		&commands, &artifactRules, &item.Enabled, &metadata, &item.CreatedAt, &item.UpdatedAt,
+	)
+	if err != nil {
+		return BuildProfileAdmin{}, fmt.Errorf("build profile not found: %w", err)
+	}
+	item.Commands = rawJSON(commands, "{}")
+	item.ArtifactRules = rawJSON(artifactRules, "[]")
+	item.Metadata = rawJSON(metadata, "{}")
+	return item, nil
 }
 
 func (s *PostgresStore) listBuildCenterProjects(ctx context.Context, extraWhere string, args ...any) ([]BuildCenterProject, error) {

@@ -11,6 +11,20 @@ type BuildCenterOverview struct {
 	MessageZh         string                  `json:"message_zh"`
 }
 
+type BuildCenterRunRequest struct {
+	ProfileKey  string `json:"profile_key"`
+	Action      string `json:"action"`
+	GitRef      string `json:"git_ref"`
+	VersionName string `json:"version_name"`
+	VersionCode int    `json:"version_code"`
+	Channel     string `json:"channel"`
+	StartedBy   string `json:"started_by"`
+}
+
+type BuildCenterRunResponse struct {
+	Run BuildCenterRunAdmin `json:"run"`
+}
+
 type BuildCenterProject struct {
 	ID                string                  `json:"id"`
 	ProjectKey        string                  `json:"project_key"`
@@ -116,6 +130,22 @@ type BuildCenterRunArtifact struct {
 	Metadata           json.RawMessage `json:"metadata,omitempty"`
 	CreatedAt          time.Time       `json:"created_at"`
 	UpdatedAt          time.Time       `json:"updated_at"`
+}
+
+type BuildCenterRunPatch struct {
+	Status       string
+	ExitCode     int
+	GitCommit    string
+	VersionName  string
+	VersionCode  int
+	BuildNumber  int
+	ArtifactDir  string
+	LogDir       string
+	ManifestPath string
+	UploadStatus string
+	ErrorMessage string
+	DurationMS   int64
+	Metadata     map[string]any
 }
 
 type DeploymentTargetAdmin struct {
