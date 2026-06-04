@@ -119,6 +119,7 @@ integration_credentials
 - Admin API 新增制品中心，`GET /admin/api/artifacts` 聚合 `app_build_artifacts` 和 `build_center_run_artifacts`，详情接口返回稳定制品引用 `immutable_ref`。
 - Admin 前端新增制品中心页面，支持统一浏览、筛选、查看制品详情和复制发布/部署引用。
 - 发布计划创建表单已接入制品中心，可选择制品后自动带入版本、build number、commit、`immutable_ref` 和 build/run/artifact 关联 ID。
+- 发布计划已支持直接按目标创建部署记录；前端发布计划列表可选择部署目标并生成 dry-run 部署记录。
 - 旧 APK 发布接口继续保留，后续再迁移成 Android 发布单元入口。
 
 ### 表职责
@@ -190,6 +191,7 @@ GET  /admin/api/release-plans/{plan_id}
 POST /admin/api/release-plans/{plan_id}/publish
 POST /admin/api/release-plans/{plan_id}/pause
 POST /admin/api/release-plans/{plan_id}/rollback
+POST /admin/api/release-plans/{plan_id}/deployments
 ```
 
 部署：
@@ -327,6 +329,7 @@ credential_ref=cf_token_release_prod
   -> 写入 app_builds / app_build_artifacts
   -> 制品中心生成 immutable_ref
   -> 创建 release_plan
+  -> 由 release_plan 创建 deployment_records
   -> 发布到目标环境
   -> 写 audit_events
 ```

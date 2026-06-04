@@ -73,12 +73,29 @@ func (h *Handler) ReleasePlanAction(action string) http.HandlerFunc {
 	}
 }
 
+func (h *Handler) CreateReleasePlanDeployment(w http.ResponseWriter, r *http.Request) {
+	var req CreateReleasePlanDeploymentRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil && !errors.Is(err, io.EOF) {
+		httpx.Error(w, r, http.StatusBadRequest, "request.invalid_json", "请求 JSON 格式不正确", nil)
+		return
+	}
+	resp, err := h.service.CreateReleasePlanDeployment(r.Context(), chi.URLParam(r, "plan_id"), req)
+	if err != nil {
+		releasePlanAPIError(w, r, err, "release_plan.deployment_create_failed", "创建发布计划部署记录失败")
+		return
+	}
+	httpx.JSON(w, http.StatusAccepted, resp)
+}
+
 func releasePlanAPIError(w http.ResponseWriter, r *http.Request, err error, code, message string) {
 	status := http.StatusBadRequest
 	if errors.Is(err, pgx.ErrNoRows) {
 		status = http.StatusNotFound
 	}
 	if errors.Is(err, errReleasePlanStoreUnavailable) {
+		status = http.StatusServiceUnavailable
+	}
+	if errors.Is(err, errDeploymentStoreUnavailable) {
 		status = http.StatusServiceUnavailable
 	}
 	httpx.Error(w, r, status, code, message, map[string]any{"error": err.Error()})

@@ -1,4 +1,5 @@
 import { apiRequest } from "@/api/client";
+import type { DeploymentRecord } from "@/api/deployments";
 
 export type ReleaseUnitType = "android" | "web" | "docs" | "worker" | "server" | "docker" | "config" | string;
 export type ReleasePlanStatus =
@@ -139,6 +140,15 @@ export interface ReleasePlanActionPayload {
   metadata?: Record<string, unknown>;
 }
 
+export interface CreateReleasePlanDeploymentPayload {
+  target_id?: string;
+  target_key?: string;
+  dry_run?: boolean;
+  triggered_by?: string;
+  deployment_url?: string;
+  metadata?: Record<string, unknown>;
+}
+
 export function getReleasePlanOverview() {
   return apiRequest<ReleasePlanOverview>("/admin/api/release-plans");
 }
@@ -167,6 +177,16 @@ export function pauseReleasePlan(planId: string, payload: ReleasePlanActionPaylo
 
 export function rollbackReleasePlan(planId: string, payload: ReleasePlanActionPayload = {}) {
   return releasePlanAction(planId, "rollback", payload);
+}
+
+export function createReleasePlanDeployment(planId: string, payload: CreateReleasePlanDeploymentPayload) {
+  return apiRequest<{ ok: boolean; plan: ReleasePlan; deployment_records: DeploymentRecord[]; message_zh?: string }>(
+    `/admin/api/release-plans/${encodeURIComponent(planId)}/deployments`,
+    {
+      method: "POST",
+      body: JSON.stringify(payload),
+    },
+  );
 }
 
 function releasePlanAction(planId: string, action: "publish" | "pause" | "rollback", payload: ReleasePlanActionPayload) {

@@ -133,8 +133,24 @@ type ReleasePlanActionRequest struct {
 	Metadata   map[string]any `json:"metadata"`
 }
 
+type CreateReleasePlanDeploymentRequest struct {
+	TargetID      string         `json:"target_id"`
+	TargetKey     string         `json:"target_key"`
+	DryRun        bool           `json:"dry_run"`
+	TriggeredBy   string         `json:"triggered_by"`
+	DeploymentURL string         `json:"deployment_url"`
+	Metadata      map[string]any `json:"metadata"`
+}
+
 type ReleasePlanActionResponse struct {
 	OK        bool             `json:"ok"`
 	Plan      ReleasePlanAdmin `json:"plan"`
 	MessageZh string           `json:"message_zh,omitempty"`
+}
+
+type ReleasePlanDeploymentResponse struct {
+	OK                bool                    `json:"ok"`
+	Plan              ReleasePlanAdmin        `json:"plan"`
+	DeploymentRecords []DeploymentRecordAdmin `json:"deployment_records"`
+	MessageZh         string                  `json:"message_zh,omitempty"`
 }

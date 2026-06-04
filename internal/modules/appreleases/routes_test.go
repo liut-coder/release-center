@@ -212,6 +212,23 @@ func TestRoutesWithOptionsProtectsReleasePlanEndpoints(t *testing.T) {
 	}
 }
 
+func TestRoutesWithOptionsProtectsReleasePlanDeploymentEndpoint(t *testing.T) {
+	handler := NewHandler(NewService(Config{}))
+	routes := handler.RoutesWithOptions(RouteOptions{
+		AdminMiddleware: []func(http.Handler) http.Handler{
+			BearerTokenMiddleware("secret"),
+		},
+	})
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/admin/api/release-plans/plan-1/deployments", strings.NewReader(`{}`))
+	routes.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("expected release plan deployment endpoint to require admin token, got %d", rec.Code)
+	}
+}
+
 func TestReleasePlanActionAllowsEmptyBody(t *testing.T) {
 	handler := NewHandler(NewService(Config{}))
 	routes := handler.RoutesWithOptions(RouteOptions{

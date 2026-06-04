@@ -143,6 +143,85 @@ func (s *Service) ReleasePlanAction(ctx context.Context, planID, action string, 
 	return ReleasePlanActionResponse{OK: true, Plan: plan, MessageZh: message}, nil
 }
 
+func (s *Service) CreateReleasePlanDeployment(ctx context.Context, planID string, req CreateReleasePlanDeploymentRequest) (ReleasePlanDeploymentResponse, error) {
+	releaseStore, ok := s.store.(ReleasePlanStore)
+	if !ok {
+		return ReleasePlanDeploymentResponse{}, errReleasePlanStoreUnavailable
+	}
+	deploymentStore, ok := s.store.(DeploymentStore)
+	if !ok {
+		return ReleasePlanDeploymentResponse{}, errDeploymentStoreUnavailable
+	}
+	planID = strings.TrimSpace(planID)
+	req.TargetID = strings.TrimSpace(req.TargetID)
+	req.TargetKey = strings.TrimSpace(req.TargetKey)
+	req.TriggeredBy = firstNonBlank(req.TriggeredBy, "admin")
+	req.DeploymentURL = strings.TrimSpace(req.DeploymentURL)
+	if planID == "" {
+		return ReleasePlanDeploymentResponse{}, fmt.Errorf("plan_id is required")
+	}
+	if req.TargetID == "" && req.TargetKey == "" {
+		return ReleasePlanDeploymentResponse{}, fmt.Errorf("target_id or target_key is required")
+	}
+	plan, err := releaseStore.ReleasePlan(ctx, planID)
+	if err != nil {
+		return ReleasePlanDeploymentResponse{}, err
+	}
+	if len(plan.Artifacts) == 0 {
+		return ReleasePlanDeploymentResponse{}, fmt.Errorf("release plan artifacts are required")
+	}
+	records := make([]DeploymentRecordAdmin, 0, len(plan.Artifacts))
+	for _, artifact := range plan.Artifacts {
+		metadata := mergeMaps(req.Metadata, map[string]any{
+			"source":            "release_plan",
+			"release_plan_id":   plan.ID,
+			"release_plan_key":  plan.PlanKey,
+			"release_unit_id":   plan.ReleaseUnitID,
+			"release_unit_key":  plan.UnitKey,
+			"environment_key":   plan.EnvironmentKey,
+			"artifact_name":     artifact.ArtifactName,
+			"artifact_type":     artifact.ArtifactType,
+			"file_name":         artifact.FileName,
+			"immutable_ref":     artifact.ImmutableRef,
+			"rollout_percent":   plan.RolloutPercentage,
+			"release_target":    plan.TargetType,
+			"release_target_id": plan.TargetValue,
+		})
+		if _, ok := metadata["artifact_path"]; !ok {
+			metadata["artifact_path"] = firstNonBlank(artifact.ImmutableRef, artifact.FileName, artifact.ArtifactName)
+		}
+		if _, ok := metadata["object_key"]; !ok {
+			metadata["object_key"] = firstNonBlank(artifact.FileName, artifact.ArtifactName)
+		}
+		record, err := deploymentStore.CreateDeploymentRecord(ctx, CreateDeploymentRequest{
+			ProjectKey:         plan.ProjectKey,
+			TargetID:           req.TargetID,
+			TargetKey:          req.TargetKey,
+			RunID:              artifact.BuildRunID,
+			AppBuildID:         artifact.AppBuildID,
+			AppBuildArtifactID: artifact.AppBuildArtifactID,
+			ProviderStatus:     "queued",
+			DeploymentURL:      req.DeploymentURL,
+			VersionName:        plan.VersionName,
+			BuildNumber:        plan.BuildNumber,
+			GitCommit:          plan.GitCommit,
+			TriggeredBy:        req.TriggeredBy,
+			DryRun:             req.DryRun,
+			Metadata:           metadata,
+		})
+		if err != nil {
+			return ReleasePlanDeploymentResponse{}, err
+		}
+		records = append(records, record)
+	}
+	return ReleasePlanDeploymentResponse{
+		OK:                true,
+		Plan:              plan,
+		DeploymentRecords: records,
+		MessageZh:         "发布计划部署记录已创建",
+	}, nil
+}
+
 func normalizeReleaseUnitType(unitType string) string {
 	unitType = strings.ToLower(strings.TrimSpace(unitType))
 	switch unitType {

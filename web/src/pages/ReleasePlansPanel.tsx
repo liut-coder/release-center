@@ -1,10 +1,12 @@
 import { useMemo, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { FileText, History, PauseCircle, RefreshCw, Rocket, Search, ShieldCheck, SlidersHorizontal, Upload } from "lucide-react";
+import { Cloud, FileText, History, PauseCircle, RefreshCw, Rocket, Search, ShieldCheck, SlidersHorizontal, Upload } from "lucide-react";
 import { getArtifactCenterOverview, type ArtifactCenterItem } from "@/api/artifacts";
 import { getBuildCenterOverview } from "@/api/buildCenter";
+import { getDeploymentTargets, type DeploymentTarget } from "@/api/deployments";
 import {
   createReleasePlan,
+  createReleasePlanDeployment,
   createReleaseUnit,
   getReleasePlanOverview,
   pauseReleasePlan,
@@ -28,6 +30,7 @@ import { formatDateTime } from "@/lib/format";
 const RELEASE_PLANS_QUERY_KEY = ["release-plans"] as const;
 const BUILD_CENTER_PROJECTS_QUERY_KEY = ["release-plans-build-center-projects"] as const;
 const ARTIFACT_CENTER_QUERY_KEY = ["release-plans-artifacts"] as const;
+const DEPLOYMENT_TARGETS_QUERY_KEY = ["release-plans-deployment-targets"] as const;
 
 const unitTypeOptions: Array<{ value: ReleaseUnitType; label: string }> = [
   { value: "android", label: "Android" },
@@ -79,6 +82,7 @@ export function ReleasePlansPanel() {
   const [newUnitChannel, setNewUnitChannel] = useState("dev");
   const [environmentFilter, setEnvironmentFilter] = useState("全部");
   const [unitTypeFilter, setUnitTypeFilter] = useState("全部");
+  const [selectedDeploymentTargetId, setSelectedDeploymentTargetId] = useState("");
   const [query, setQuery] = useState("");
   const [message, setMessage] = useState("发布计划已就绪。");
   const [messageTone, setMessageTone] = useState<"default" | "success" | "warning" | "danger">("default");
@@ -95,6 +99,10 @@ export function ReleasePlansPanel() {
     queryKey: ARTIFACT_CENTER_QUERY_KEY,
     queryFn: getArtifactCenterOverview,
   });
+  const deploymentTargetsQuery = useQuery({
+    queryKey: DEPLOYMENT_TARGETS_QUERY_KEY,
+    queryFn: getDeploymentTargets,
+  });
 
   const environments = useMemo(() => [...(overviewQuery.data?.environments ?? [])].sort((left, right) => left.sort_order - right.sort_order), [
     overviewQuery.data?.environments,
@@ -102,6 +110,8 @@ export function ReleasePlansPanel() {
   const releaseUnits = overviewQuery.data?.release_units ?? [];
   const releasePlans = overviewQuery.data?.release_plans ?? [];
   const artifacts = artifactsQuery.data?.artifacts ?? [];
+  const deploymentTargets = deploymentTargetsQuery.data?.deployment_targets ?? [];
+  const effectiveDeploymentTargetId = selectedDeploymentTargetId || deploymentTargets[0]?.id || "";
   const projectKeys = useMemo(
     () =>
       unique([
@@ -194,9 +204,25 @@ export function ReleasePlansPanel() {
     },
     onError: (error) => showPanelError(error, "发布计划操作失败", setMessage, setMessageTone),
   });
+  const deploymentMutation = useMutation({
+    mutationFn: (plan: ReleasePlan) => {
+      if (!effectiveDeploymentTargetId) throw new Error("请选择部署目标");
+      return createReleasePlanDeployment(plan.id, {
+        target_id: effectiveDeploymentTargetId,
+        dry_run: true,
+        triggered_by: "admin-web",
+        metadata: { source: "admin_web", ui: "release_plans_panel" },
+      });
+    },
+    onSuccess: (result) => {
+      setMessage(result.message_zh || `部署记录已创建：${result.deployment_records.length} 条`);
+      setMessageTone("success");
+    },
+    onError: (error) => showPanelError(error, "创建部署记录失败", setMessage, setMessageTone),
+  });
 
-  const mutationError = createPlanMutation.error || createUnitMutation.error || planActionMutation.error;
-  const busy = createPlanMutation.isPending || createUnitMutation.isPending || planActionMutation.isPending;
+  const mutationError = createPlanMutation.error || createUnitMutation.error || planActionMutation.error || deploymentMutation.error;
+  const busy = createPlanMutation.isPending || createUnitMutation.isPending || planActionMutation.isPending || deploymentMutation.isPending;
 
   function buildCreatePlanPayload(): CreateReleasePlanPayload {
     const hasArtifact = [artifactName, artifactType, artifactFileName, artifactRef, artifactBuildRunId, artifactAppBuildId, artifactAppBuildArtifactId].some((value) =>
@@ -261,6 +287,7 @@ export function ReleasePlansPanel() {
       {overviewQuery.isError ? <ApiErrorState error={overviewQuery.error} title="发布计划读取失败" /> : null}
       {projectsQuery.isError ? <ApiErrorState error={projectsQuery.error} title="项目列表读取失败" /> : null}
       {artifactsQuery.isError ? <ApiErrorState error={artifactsQuery.error} title="制品中心读取失败" /> : null}
+      {deploymentTargetsQuery.isError ? <ApiErrorState error={deploymentTargetsQuery.error} title="部署目标读取失败" /> : null}
       {mutationError ? <ApiErrorState error={mutationError} title="发布计划操作失败" /> : null}
       <StatusMessage text={message} tone={messageTone} />
 
@@ -405,7 +432,7 @@ export function ReleasePlansPanel() {
         <div className="grid gap-4">
           <ReleaseMatrix environments={environments} units={releaseUnits} latestPlanMap={latestPlanMap} />
           <Card>
-            <div className="mb-4 grid gap-3 md:grid-cols-[140px_140px_minmax(0,1fr)_auto]">
+            <div className="mb-4 grid gap-3 md:grid-cols-[120px_120px_220px_minmax(0,1fr)_auto]">
               <Select
                 label="环境"
                 value={environmentFilter}
@@ -413,6 +440,16 @@ export function ReleasePlansPanel() {
                 options={["全部", ...environments.map((environment) => environment.environment_key)]}
               />
               <Select label="类型" value={unitTypeFilter} onChange={setUnitTypeFilter} options={["全部", ...unitTypeOptions]} />
+              <Select
+                label="部署目标"
+                value={effectiveDeploymentTargetId}
+                onChange={setSelectedDeploymentTargetId}
+                options={deploymentTargets.map((target) => ({
+                  value: target.id,
+                  label: deploymentTargetLabel(target),
+                }))}
+                placeholder="暂无部署目标"
+              />
               <div className="relative">
                 <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
                 <Input
@@ -427,14 +464,21 @@ export function ReleasePlansPanel() {
                 onClick={() => {
                   overviewQuery.refetch();
                   artifactsQuery.refetch();
+                  deploymentTargetsQuery.refetch();
                 }}
-                disabled={overviewQuery.isFetching || artifactsQuery.isFetching}
+                disabled={overviewQuery.isFetching || artifactsQuery.isFetching || deploymentTargetsQuery.isFetching}
               >
                 <RefreshCw className="mr-2 h-4 w-4" />
                 刷新
               </Button>
             </div>
-            <ReleasePlanList plans={filteredPlans} busy={busy} onAction={(plan, action) => planActionMutation.mutate({ plan, action })} />
+            <ReleasePlanList
+              plans={filteredPlans}
+              busy={busy}
+              deploymentTargetId={effectiveDeploymentTargetId}
+              onAction={(plan, action) => planActionMutation.mutate({ plan, action })}
+              onDeploy={(plan) => deploymentMutation.mutate(plan)}
+            />
           </Card>
         </div>
       </div>
@@ -510,13 +554,17 @@ function PlanMatrixCell({ plan }: { plan?: ReleasePlan }) {
 }
 
 function ReleasePlanList({
-  plans,
-  busy,
-  onAction,
+	plans,
+	busy,
+	deploymentTargetId,
+	onAction,
+	onDeploy,
 }: {
-  plans: ReleasePlan[];
-  busy: boolean;
-  onAction: (plan: ReleasePlan, action: PlanAction) => void;
+	plans: ReleasePlan[];
+	busy: boolean;
+	deploymentTargetId: string;
+	onAction: (plan: ReleasePlan, action: PlanAction) => void;
+	onDeploy: (plan: ReleasePlan) => void;
 }) {
   return (
     <div className="grid gap-3">
@@ -545,12 +593,16 @@ function ReleasePlanList({
                   <PauseCircle className="mr-2 h-3.5 w-3.5" />
                   暂停
                 </Button>
-                <Button variant="secondary" size="sm" onClick={() => onAction(plan, "rollback")} disabled={busy || plan.status === "rolled_back"}>
-                  <History className="mr-2 h-3.5 w-3.5" />
-                  回滚
-                </Button>
-              </div>
-            </div>
+				<Button variant="secondary" size="sm" onClick={() => onAction(plan, "rollback")} disabled={busy || plan.status === "rolled_back"}>
+					<History className="mr-2 h-3.5 w-3.5" />
+					回滚
+				</Button>
+				<Button variant="secondary" size="sm" onClick={() => onDeploy(plan)} disabled={busy || !deploymentTargetId || !(plan.artifacts?.length)}>
+					<Cloud className="mr-2 h-3.5 w-3.5" />
+					部署
+				</Button>
+			</div>
+		</div>
             <div className="mt-3 grid gap-2 text-xs md:grid-cols-4">
               <Info label="版本" value={plan.version_name || "-"} />
               <Info label="build" value={String(plan.build_number ?? "-")} />
@@ -764,6 +816,10 @@ function artifactOptionLabel(artifact: ArtifactCenterItem) {
   const scope = artifact.project_key || artifact.app_key || artifact.source;
   const version = artifact.version_name ? `${artifact.version_name}${artifact.build_number ? ` #${artifact.build_number}` : ""}` : artifact.artifact_type;
   return `${scope} / ${artifact.name || artifact.file_name || artifact.id.slice(0, 8)} / ${version}`;
+}
+
+function deploymentTargetLabel(target: DeploymentTarget) {
+  return `${target.name || target.target_key} / ${target.provider} / ${target.environment}`;
 }
 
 function countEnabledUnits(units: ReleaseUnit[]) {
