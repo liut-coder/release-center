@@ -14,6 +14,7 @@ type DeploymentStore interface {
 	CreateDeploymentTarget(ctx context.Context, req CreateDeploymentTargetRequest) (DeploymentTargetAdmin, error)
 	DeploymentRecords(ctx context.Context) ([]DeploymentRecordAdmin, error)
 	DeploymentRecord(ctx context.Context, deploymentID string) (DeploymentRecordAdmin, error)
+	PreviousSuccessfulDeploymentRecord(ctx context.Context, deploymentID string) (DeploymentRecordAdmin, error)
 	CreateDeploymentRecord(ctx context.Context, req CreateDeploymentRequest) (DeploymentRecordAdmin, error)
 	UpdateDeploymentRecordStatus(ctx context.Context, deploymentID string, req UpdateDeploymentStatusRequest) (DeploymentRecordAdmin, error)
 }
@@ -120,6 +121,54 @@ func (s *Service) FailDeployment(ctx context.Context, deploymentID string, req U
 	return s.updateDeploymentStatus(ctx, deploymentID, req, "部署失败已记录")
 }
 
+func (s *Service) RollbackDeployment(ctx context.Context, deploymentID string, req RollbackDeploymentRequest) (DeploymentActionResponse, error) {
+	store, ok := s.store.(DeploymentStore)
+	if !ok {
+		return DeploymentActionResponse{}, errDeploymentStoreUnavailable
+	}
+	deploymentID = strings.TrimSpace(deploymentID)
+	req.TriggeredBy = strings.TrimSpace(firstNonBlank(req.TriggeredBy, "admin"))
+	req.Reason = strings.TrimSpace(req.Reason)
+	if deploymentID == "" {
+		return DeploymentActionResponse{}, fmt.Errorf("deployment_id is required")
+	}
+	current, err := store.DeploymentRecord(ctx, deploymentID)
+	if err != nil {
+		return DeploymentActionResponse{}, err
+	}
+	previous, err := store.PreviousSuccessfulDeploymentRecord(ctx, deploymentID)
+	if err != nil {
+		return DeploymentActionResponse{}, err
+	}
+	deployReq := CreateDeploymentRequest{
+		TargetID:           current.TargetID,
+		RunID:              previous.RunID,
+		AppBuildID:         previous.AppBuildID,
+		AppBuildArtifactID: previous.AppBuildArtifactID,
+		VersionName:        previous.VersionName,
+		BuildNumber:        previous.BuildNumber,
+		GitCommit:          previous.GitCommit,
+		TriggeredBy:        req.TriggeredBy,
+		DryRun:             req.DryRun,
+		LogTail: []string{
+			fmt.Sprintf("rollback requested from deployment %s to previous success %s", current.ID, previous.ID),
+		},
+		Metadata: rollbackDeploymentMetadata(current, previous, req),
+	}
+	resp, err := s.CreateDeployment(ctx, deployReq)
+	if err != nil {
+		return DeploymentActionResponse{}, err
+	}
+	resp.RollbackSource = &current
+	resp.RollbackTarget = &previous
+	if req.DryRun {
+		resp.MessageZh = "回滚 dry-run 部署记录已创建"
+	} else {
+		resp.MessageZh = "回滚部署记录已创建并投递 Worker"
+	}
+	return resp, nil
+}
+
 func (s *Service) updateDeploymentStatus(ctx context.Context, deploymentID string, req UpdateDeploymentStatusRequest, message string) (DeploymentActionResponse, error) {
 	store, ok := s.store.(DeploymentStore)
 	if !ok {
@@ -136,6 +185,38 @@ func (s *Service) updateDeploymentStatus(ctx context.Context, deploymentID strin
 		return DeploymentActionResponse{}, err
 	}
 	return DeploymentActionResponse{OK: true, Record: &record, MessageZh: message}, nil
+}
+
+func rollbackDeploymentMetadata(current, previous DeploymentRecordAdmin, req RollbackDeploymentRequest) map[string]any {
+	metadata := rawJSONMap(previous.Metadata)
+	for _, key := range []string{
+		"deployment_record_id",
+		"deployment_target_id",
+		"deployment_provider",
+		"deployment_target",
+		"execution_mode",
+		"external_deployment_id",
+		"prepared_command",
+		"provider",
+		"worker_key",
+		"worker_status",
+		"worker_task_id",
+	} {
+		delete(metadata, key)
+	}
+	metadata = mergeMaps(metadata, req.Metadata)
+	metadata = mergeMaps(metadata, map[string]any{
+		"source":                      "deployment_rollback",
+		"rollback_from_deployment_id": current.ID,
+		"rollback_from_status":        current.ProviderStatus,
+		"rollback_to_deployment_id":   previous.ID,
+		"rollback_to_version_name":    previous.VersionName,
+		"rollback_to_build_number":    previous.BuildNumber,
+		"rollback_to_git_commit":      previous.GitCommit,
+		"rollback_to_deployment_url":  previous.DeploymentURL,
+		"rollback_reason":             req.Reason,
+	})
+	return metadata
 }
 
 func normalizeDeploymentProvider(provider string) string {

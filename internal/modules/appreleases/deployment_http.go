@@ -84,6 +84,20 @@ func (h *Handler) FailDeployment(w http.ResponseWriter, r *http.Request) {
 	httpx.JSON(w, http.StatusOK, resp)
 }
 
+func (h *Handler) RollbackDeployment(w http.ResponseWriter, r *http.Request) {
+	var req RollbackDeploymentRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		httpx.Error(w, r, http.StatusBadRequest, "request.invalid_json", "请求 JSON 格式不正确", nil)
+		return
+	}
+	resp, err := h.service.RollbackDeployment(r.Context(), chi.URLParam(r, "deployment_id"), req)
+	if err != nil {
+		deploymentAPIError(w, r, err, "deploy.rollback_failed", "创建回滚部署失败")
+		return
+	}
+	httpx.JSON(w, http.StatusAccepted, resp)
+}
+
 func deploymentAPIError(w http.ResponseWriter, r *http.Request, err error, code, message string) {
 	status := http.StatusBadRequest
 	if errors.Is(err, pgx.ErrNoRows) {

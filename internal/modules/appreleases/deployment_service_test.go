@@ -123,16 +123,143 @@ func TestCreateDeploymentDoesNotEnqueueWorkerForDryRun(t *testing.T) {
 	}
 }
 
+func TestRollbackDeploymentCreatesDryRunFromPreviousSuccess(t *testing.T) {
+	store := &deploymentDispatchStore{
+		currentRecord: DeploymentRecordAdmin{
+			ID:             "deployment-current",
+			TargetID:       "target-1",
+			Provider:       "cloudflare_pages",
+			ProviderStatus: "failed",
+		},
+		previousRecord: DeploymentRecordAdmin{
+			ID:                   "deployment-previous",
+			TargetID:             "target-1",
+			RunID:                "run-1",
+			AppBuildID:           "build-1",
+			AppBuildArtifactID:   "artifact-1",
+			Provider:             "cloudflare_pages",
+			ProviderStatus:       "success",
+			DeploymentURL:        "https://previous.example",
+			VersionName:          "1.0.0",
+			BuildNumber:          10,
+			GitCommit:            "abc123",
+			ExternalDeploymentID: "cf-old",
+			Metadata:             []byte(`{"artifact_path":"dist-old","deployment_record_id":"old-task-link","prepared_command":["stale"]}`),
+		},
+		record: DeploymentRecordAdmin{
+			ID:             "deployment-rollback",
+			TargetID:       "target-1",
+			Provider:       "cloudflare_pages",
+			ProviderStatus: "dry_run",
+			VersionName:    "1.0.0",
+			BuildNumber:    10,
+		},
+	}
+	service := &Service{store: store}
+
+	resp, err := service.RollbackDeployment(context.Background(), "deployment-current", RollbackDeploymentRequest{
+		DryRun:      true,
+		TriggeredBy: "tester",
+		Reason:      "bad deploy",
+	})
+	if err != nil {
+		t.Fatalf("RollbackDeployment() error = %v", err)
+	}
+	if resp.Record == nil || resp.Record.ID != "deployment-rollback" {
+		t.Fatalf("unexpected rollback response: %#v", resp)
+	}
+	if resp.WorkerTask != nil || len(store.workerRequests) != 0 {
+		t.Fatalf("dry-run rollback should not enqueue worker: resp=%#v requests=%#v", resp, store.workerRequests)
+	}
+	if len(store.deploymentRequests) != 1 {
+		t.Fatalf("expected one deployment request, got %d", len(store.deploymentRequests))
+	}
+	req := store.deploymentRequests[0]
+	if !req.DryRun || req.TargetID != "target-1" || req.VersionName != "1.0.0" || req.BuildNumber != 10 {
+		t.Fatalf("unexpected rollback deployment request: %#v", req)
+	}
+	if req.Metadata["source"] != "deployment_rollback" || req.Metadata["rollback_to_deployment_id"] != "deployment-previous" {
+		t.Fatalf("rollback metadata missing: %#v", req.Metadata)
+	}
+	if _, ok := req.Metadata["deployment_record_id"]; ok {
+		t.Fatalf("rollback metadata should not keep previous worker linkage: %#v", req.Metadata)
+	}
+	if _, ok := req.Metadata["prepared_command"]; ok {
+		t.Fatalf("rollback metadata should let deployment creation regenerate prepared_command: %#v", req.Metadata)
+	}
+}
+
+func TestRollbackDeploymentEnqueuesWorkerForRealRollback(t *testing.T) {
+	store := &deploymentDispatchStore{
+		currentRecord: DeploymentRecordAdmin{
+			ID:             "deployment-current",
+			TargetID:       "target-1",
+			Provider:       "cloudflare_pages",
+			ProviderStatus: "failed",
+		},
+		previousRecord: DeploymentRecordAdmin{
+			ID:             "deployment-previous",
+			TargetID:       "target-1",
+			Provider:       "cloudflare_pages",
+			ProviderStatus: "success",
+			VersionName:    "1.0.0",
+			BuildNumber:    10,
+			GitCommit:      "abc123",
+			Metadata:       []byte(`{"artifact_path":"dist-old"}`),
+		},
+		record: DeploymentRecordAdmin{
+			ID:             "deployment-rollback",
+			TargetID:       "target-1",
+			TargetKey:      "pages",
+			Provider:       "cloudflare_pages",
+			ProviderStatus: "queued",
+			VersionName:    "1.0.0",
+			BuildNumber:    10,
+			GitCommit:      "abc123",
+			Metadata:       []byte(`{"prepared_command":["wrangler","pages","deploy","dist-old"]}`),
+		},
+	}
+	service := &Service{store: store}
+
+	resp, err := service.RollbackDeployment(context.Background(), "deployment-current", RollbackDeploymentRequest{
+		DryRun: false,
+	})
+	if err != nil {
+		t.Fatalf("RollbackDeployment() error = %v", err)
+	}
+	if resp.WorkerTask == nil {
+		t.Fatalf("expected worker task for real rollback")
+	}
+	if len(store.workerRequests) != 1 {
+		t.Fatalf("expected one worker request, got %d", len(store.workerRequests))
+	}
+	if store.workerRequests[0].Metadata["rollback_from_deployment_id"] != "deployment-current" {
+		t.Fatalf("worker metadata missing rollback source: %#v", store.workerRequests[0].Metadata)
+	}
+}
+
 type deploymentDispatchStore struct {
 	Store
 	DeploymentStore
 	WorkerStore
-	record         DeploymentRecordAdmin
-	workerRequests []CreateWorkerTaskRequest
+	record             DeploymentRecordAdmin
+	currentRecord      DeploymentRecordAdmin
+	previousRecord     DeploymentRecordAdmin
+	deploymentRequests []CreateDeploymentRequest
+	workerRequests     []CreateWorkerTaskRequest
 }
 
 func (s *deploymentDispatchStore) CreateDeploymentRecord(ctx context.Context, req CreateDeploymentRequest) (DeploymentRecordAdmin, error) {
+	s.deploymentRequests = append(s.deploymentRequests, req)
 	return s.record, nil
+}
+
+func (s *deploymentDispatchStore) DeploymentRecord(ctx context.Context, deploymentID string) (DeploymentRecordAdmin, error) {
+	return s.currentRecord, nil
+}
+
+func (s *deploymentDispatchStore) PreviousSuccessfulDeploymentRecord(ctx context.Context, deploymentID string) (DeploymentRecordAdmin, error) {
+	return s.previousRecord, nil
 }
 
 func (s *deploymentDispatchStore) CreateWorkerTask(ctx context.Context, req CreateWorkerTaskRequest) (WorkerTaskAdmin, error) {

@@ -10,6 +10,7 @@ import {
   failDeployment,
   getDeployments,
   getDeploymentTargets,
+  rollbackDeployment,
   type DeploymentProvider,
   type DeploymentRecord,
   type DeploymentStatus,
@@ -194,8 +195,29 @@ export function DeploymentCenterPage() {
     onError: (error) => showDeploymentError(error, "记录部署失败失败", setMessage, setMessageTone),
   });
 
-  const mutationError = createTargetMutation.error || createDeploymentMutation.error || completeMutation.error || failMutation.error;
-  const busy = createTargetMutation.isPending || createDeploymentMutation.isPending || completeMutation.isPending || failMutation.isPending;
+  const rollbackMutation = useMutation({
+    mutationFn: (record: DeploymentRecord) =>
+      rollbackDeployment(record.id, {
+        dry_run: deploymentDryRun,
+        triggered_by: "admin-web",
+        reason: `rollback requested from deployment center for ${record.provider_status}`,
+        metadata: { source: "admin_web", ui: "deployment_center" },
+      }),
+    onSuccess: async (result) => {
+      setMessage(result.message_zh || `回滚部署记录已创建：${shortId(result.record.id)}`);
+      setMessageTone("success");
+      await recordsQuery.refetch();
+    },
+    onError: (error) => showDeploymentError(error, "创建回滚部署失败", setMessage, setMessageTone),
+  });
+
+  const mutationError = createTargetMutation.error || createDeploymentMutation.error || completeMutation.error || failMutation.error || rollbackMutation.error;
+  const busy =
+    createTargetMutation.isPending ||
+    createDeploymentMutation.isPending ||
+    completeMutation.isPending ||
+    failMutation.isPending ||
+    rollbackMutation.isPending;
 
   function applyArtifact(artifact?: ArtifactCenterItem) {
     if (!artifact) {
@@ -377,6 +399,7 @@ export function DeploymentCenterPage() {
               busy={busy}
               onComplete={(record) => completeMutation.mutate(record)}
               onFail={(record) => failMutation.mutate(record)}
+              onRollback={(record) => rollbackMutation.mutate(record)}
             />
           </Card>
         </div>
@@ -423,11 +446,13 @@ function DeploymentRecordsTable({
   busy,
   onComplete,
   onFail,
+  onRollback,
 }: {
   records: DeploymentRecord[];
   busy: boolean;
   onComplete: (record: DeploymentRecord) => void;
   onFail: (record: DeploymentRecord) => void;
+  onRollback: (record: DeploymentRecord) => void;
 }) {
   return (
     <Table>
@@ -481,6 +506,9 @@ function DeploymentRecordsTable({
                   <Button variant="secondary" size="sm" disabled={busy || record.provider_status === "failed"} onClick={() => onFail(record)}>
                     失败
                   </Button>
+                  <Button variant="secondary" size="sm" disabled={busy || !canRollbackDeployment(record)} onClick={() => onRollback(record)}>
+                    回滚
+                  </Button>
                 </div>
               </Td>
             </tr>
@@ -494,6 +522,10 @@ function DeploymentRecordsTable({
       </tbody>
     </Table>
   );
+}
+
+function canRollbackDeployment(record: DeploymentRecord) {
+  return !["queued", "running"].includes(record.provider_status);
 }
 
 function Select({

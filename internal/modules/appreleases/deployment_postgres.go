@@ -92,6 +92,27 @@ func (s *PostgresStore) DeploymentRecord(ctx context.Context, deploymentID strin
 	return scanDeploymentRecord(row)
 }
 
+func (s *PostgresStore) PreviousSuccessfulDeploymentRecord(ctx context.Context, deploymentID string) (DeploymentRecordAdmin, error) {
+	row := s.db.QueryRow(ctx, deploymentRecordSelectSQL()+`
+		where dr.tenant_id = 'default'
+		  and dr.provider_status = 'success'
+		  and dr.id <> $1::uuid
+		  and dr.target_id = (
+		    select current_dr.target_id
+		    from deployment_records current_dr
+		    where current_dr.tenant_id = 'default' and current_dr.id = $1::uuid
+		  )
+		  and dr.created_at < (
+		    select current_dr.created_at
+		    from deployment_records current_dr
+		    where current_dr.tenant_id = 'default' and current_dr.id = $1::uuid
+		  )
+		order by dr.created_at desc
+		limit 1
+	`, deploymentID)
+	return scanDeploymentRecord(row)
+}
+
 func (s *PostgresStore) CreateDeploymentRecord(ctx context.Context, req CreateDeploymentRequest) (DeploymentRecordAdmin, error) {
 	target, err := s.deploymentTargetForRequest(ctx, req.TargetID, req.ProjectKey, req.TargetKey)
 	if err != nil {

@@ -51,6 +51,13 @@ type UpdateDeploymentStatusRequest struct {
 	Metadata             map[string]any `json:"metadata"`
 }
 
+type RollbackDeploymentRequest struct {
+	DryRun      bool           `json:"dry_run"`
+	TriggeredBy string         `json:"triggered_by"`
+	Reason      string         `json:"reason"`
+	Metadata    map[string]any `json:"metadata"`
+}
+
 type DeploymentRecordAdmin struct {
 	ID                   string          `json:"id"`
 	TargetID             string          `json:"target_id"`
@@ -80,11 +87,13 @@ type DeploymentRecordAdmin struct {
 }
 
 type DeploymentActionResponse struct {
-	OK         bool                   `json:"ok"`
-	Target     *DeploymentTargetAdmin `json:"target,omitempty"`
-	Record     *DeploymentRecordAdmin `json:"record,omitempty"`
-	WorkerTask *WorkerTaskAdmin       `json:"worker_task,omitempty"`
-	MessageZh  string                 `json:"message_zh,omitempty"`
+	OK             bool                   `json:"ok"`
+	Target         *DeploymentTargetAdmin `json:"target,omitempty"`
+	Record         *DeploymentRecordAdmin `json:"record,omitempty"`
+	RollbackSource *DeploymentRecordAdmin `json:"rollback_source,omitempty"`
+	RollbackTarget *DeploymentRecordAdmin `json:"rollback_target,omitempty"`
+	WorkerTask     *WorkerTaskAdmin       `json:"worker_task,omitempty"`
+	MessageZh      string                 `json:"message_zh,omitempty"`
 }
 
 type DeploymentRecordsResponse struct {

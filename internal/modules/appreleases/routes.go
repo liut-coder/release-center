@@ -49,6 +49,7 @@ func (h *Handler) RoutesWithOptions(opts RouteOptions) chi.Router {
 		r.Post("/admin/api/deployments", h.CreateDeployment)
 		r.Post("/admin/api/deployments/{deployment_id}/complete", h.CompleteDeployment)
 		r.Post("/admin/api/deployments/{deployment_id}/fail", h.FailDeployment)
+		r.Post("/admin/api/deployments/{deployment_id}/rollback", h.RollbackDeployment)
 		r.Get("/admin/api/workers", h.WorkerOverview)
 		r.Post("/admin/api/workers/tasks", h.CreateWorkerTask)
 		r.Get("/admin/api/release-plans", h.ReleasePlanOverview)

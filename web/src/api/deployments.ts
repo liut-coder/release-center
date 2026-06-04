@@ -98,6 +98,13 @@ export interface UpdateDeploymentStatusPayload {
   metadata?: Record<string, unknown>;
 }
 
+export interface RollbackDeploymentPayload {
+  dry_run?: boolean;
+  triggered_by?: string;
+  reason?: string;
+  metadata?: Record<string, unknown>;
+}
+
 export function getDeploymentTargets() {
   return apiRequest<{ deployment_targets: DeploymentTarget[] }>("/admin/api/deployment-targets");
 }
@@ -133,6 +140,16 @@ export function completeDeployment(deploymentId: string, payload: UpdateDeployme
 export function failDeployment(deploymentId: string, payload: UpdateDeploymentStatusPayload = {}) {
   return apiRequest<{ ok: boolean; record: DeploymentRecord; message_zh?: string }>(
     `/admin/api/deployments/${encodeURIComponent(deploymentId)}/fail`,
+    {
+      method: "POST",
+      body: JSON.stringify(payload),
+    },
+  );
+}
+
+export function rollbackDeployment(deploymentId: string, payload: RollbackDeploymentPayload = {}) {
+  return apiRequest<{ ok: boolean; record: DeploymentRecord; worker_task?: WorkerTask; message_zh?: string }>(
+    `/admin/api/deployments/${encodeURIComponent(deploymentId)}/rollback`,
     {
       method: "POST",
       body: JSON.stringify(payload),

@@ -202,6 +202,7 @@ POST /admin/api/deployment-targets
 POST /admin/api/deployments
 GET  /admin/api/deployments
 GET  /admin/api/deployments/{deployment_id}
+POST /admin/api/deployments/{deployment_id}/rollback
 ```
 
 ### Worker API
@@ -228,6 +229,7 @@ POST /api/v1/workers/tasks/{task_id}/fail
 - Admin 前端新增 Worker 接入页面，支持 Worker 状态、标签能力、任务队列和手工投递任务可视化。
 - 非 dry-run 部署会自动投递 `deploy` 类型 Worker 任务，Worker complete/fail 后回填 `deployment_records` 状态、日志和外部部署信息。
 - `releasectl worker-run` 已作为外部机器 agent 接入现有 Worker API，支持注册、心跳、领取任务、执行 `metadata.command` / `metadata.prepared_command`、回传日志和 complete/fail。
+- 部署中心已支持从当前部署记录回滚到同一目标上一条成功部署；dry-run 只落回滚记录，非 dry-run 会继续投递 Worker。
 
 外部机器最小启动方式：
 
@@ -360,6 +362,7 @@ credential_ref=cf_token_release_prod
 - `releasectl worker-run -labels linux,node,cloudflare -execute` 可在已安装 wrangler 的机器上执行这些 prepared command。
 - 支持 `/complete` 和 `/fail` 回填外部部署状态、URL、日志和错误信息。
 - Admin 前端新增部署中心，支持部署目标维护、从制品中心选择制品创建 Cloudflare Pages/Worker/R2 dry-run 或 Worker 投递部署记录、prepared command 展示和状态回填。
+- Admin 前端部署记录支持回滚操作，复用部署投递区的 Dry-run 开关控制只落记录或直接投递 Worker。
 
 Cloudflare worker 机器凭据约定：
 
@@ -406,6 +409,8 @@ Web dist / Worker bundle 已登记
   -> dry-run 记录或投递 Worker 执行 wrangler
   -> 写 deployment_records
   -> 回填 URL / deployment id / 状态
+  -> 失败时按同一目标上一条 success 部署创建 rollback deployment
+  -> dry-run 验证或投递 Worker 执行回滚
 ```
 
 ### 外部机器构建
