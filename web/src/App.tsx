@@ -11,6 +11,7 @@ import {
   ListTree,
   LogOut,
   Menu,
+  Package,
   Rocket,
   Search,
   Server,
@@ -39,6 +40,7 @@ import {
   type SystemUser,
 } from "@/api/systemManagement";
 import { AppReleasesPage } from "@/pages/AppReleasesPage";
+import { ArtifactCenterPage } from "@/pages/ArtifactCenterPage";
 import { BuildCenterPage } from "@/pages/BuildCenterPage";
 import { DeploymentCenterPage } from "@/pages/DeploymentCenterPage";
 import { WorkerCenterPage } from "@/pages/WorkerCenterPage";
@@ -55,6 +57,7 @@ type AdminPageKey =
   | "dashboard"
   | "release-center"
   | "build-center"
+  | "artifact-center"
   | "worker-center"
   | "deployment-center"
   | "users"
@@ -73,6 +76,7 @@ const navigation: Array<{
       { key: "dashboard", label: "首页", icon: LayoutDashboard },
       { key: "release-center", label: "发布中心", icon: Rocket },
       { key: "build-center", label: "构建中心", icon: Hammer },
+      { key: "artifact-center", label: "制品中心", icon: Package },
       { key: "worker-center", label: "Worker 接入", icon: Server },
       { key: "deployment-center", label: "部署中心", icon: Cloud },
     ],
@@ -369,6 +373,7 @@ function NavButton({ active, icon: Icon, label, onClick }: { active: boolean; ic
 function renderPage(activePage: AdminPageKey, setActivePage: (page: AdminPageKey) => void, context: SystemPageRenderContext) {
   if (activePage === "release-center") return <AppReleasesPage />;
   if (activePage === "build-center") return <BuildCenterPage />;
+  if (activePage === "artifact-center") return <ArtifactCenterPage />;
   if (activePage === "worker-center") return <WorkerCenterPage />;
   if (activePage === "deployment-center") return <DeploymentCenterPage />;
   if (activePage === "users") return <UsersPage users={context.system.users} loading={context.loading} error={context.error} actions={context.actions} />;

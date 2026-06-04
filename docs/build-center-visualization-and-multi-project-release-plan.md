@@ -116,6 +116,8 @@ integration_credentials
 - 已预置 dev/test/staging/prod 环境和 release-center 的 Web/Server/Worker 发布单元。
 - Admin API 支持创建发布单元、创建/查询发布计划，并支持 publish/pause/rollback 状态动作。
 - Admin 前端发布中心默认进入发布计划工作台，支持项目/单元/环境矩阵、发布单元维护、发布计划创建和状态动作。
+- Admin API 新增制品中心，`GET /admin/api/artifacts` 聚合 `app_build_artifacts` 和 `build_center_run_artifacts`，详情接口返回稳定制品引用 `immutable_ref`。
+- Admin 前端新增制品中心页面，支持统一浏览、筛选、查看制品详情和复制发布/部署引用。
 - 旧 APK 发布接口继续保留，后续再迁移成 Android 发布单元入口。
 
 ### 表职责
@@ -316,6 +318,7 @@ credential_ref=cf_token_release_prod
   -> 写入 build_center_run_artifacts
   -> 上传到 Release Center CI API
   -> 写入 app_builds / app_build_artifacts
+  -> 制品中心生成 immutable_ref
   -> 创建 release_plan
   -> 发布到目标环境
   -> 写 audit_events
@@ -404,5 +407,6 @@ worker 注册
 - 构建中心前端页面。
 - 本机 `buildctl all release-center` 可视化触发。
 - 构建日志、产物、上传状态展示。
+- 制品中心统一聚合构建中心产物和 App 构建制品，作为发布计划和部署记录的入口。
 
-多环境发布计划、Cloudflare 真部署、外部 worker API 放在后续小分支，避免一次改动过大。
+多环境发布计划、部署记录、外部 worker API 已进入当前分支；Cloudflare 真部署和审批/RBAC 继续放在后续小分支，避免一次改动过大。

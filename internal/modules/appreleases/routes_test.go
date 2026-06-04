@@ -144,6 +144,23 @@ func TestRoutesWithOptionsProtectsAdminWorkerEndpoints(t *testing.T) {
 	}
 }
 
+func TestRoutesWithOptionsProtectsArtifactCenterEndpoints(t *testing.T) {
+	handler := NewHandler(NewService(Config{}))
+	routes := handler.RoutesWithOptions(RouteOptions{
+		AdminMiddleware: []func(http.Handler) http.Handler{
+			BearerTokenMiddleware("secret"),
+		},
+	})
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/admin/api/artifacts/artifact-1", nil)
+	routes.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("expected artifact center endpoint to require admin token, got %d", rec.Code)
+	}
+}
+
 func TestRoutesWithOptionsProtectsDeploymentEndpoints(t *testing.T) {
 	handler := NewHandler(NewService(Config{}))
 	routes := handler.RoutesWithOptions(RouteOptions{
