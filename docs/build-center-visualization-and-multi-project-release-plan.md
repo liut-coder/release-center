@@ -286,6 +286,13 @@ credential_ref=cf_token_release_prod
 
 实际明文放环境变量、secret 文件或后续 Vault，不写入数据库、不写入 Git。
 
+当前已落地：
+
+- Admin API 支持创建 `deployment_targets` 和写入/查询 `deployment_records`。
+- `POST /admin/api/deployments` 可按 project + target 创建部署记录，支持 dry-run。
+- Cloudflare Pages/Workers/R2 目标会生成 wrangler 准备命令写入部署记录 metadata，等待凭证和执行器接入。
+- 支持 `/complete` 和 `/fail` 回填外部部署状态、URL、日志和错误信息。
+
 ## 7. 全流程闭环
 
 ### 手工构建发布

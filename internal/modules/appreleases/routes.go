@@ -38,6 +38,12 @@ func (h *Handler) RoutesWithOptions(opts RouteOptions) chi.Router {
 		r.Get("/admin/api/build-center/runs/{run_id}", h.BuildCenterRun)
 		r.Get("/admin/api/build-center/runs/{run_id}/logs", h.BuildCenterRunLogs)
 		r.Get("/admin/api/deployment-targets", h.DeploymentTargets)
+		r.Post("/admin/api/deployment-targets", h.CreateDeploymentTarget)
+		r.Get("/admin/api/deployments", h.Deployments)
+		r.Get("/admin/api/deployments/{deployment_id}", h.Deployment)
+		r.Post("/admin/api/deployments", h.CreateDeployment)
+		r.Post("/admin/api/deployments/{deployment_id}/complete", h.CompleteDeployment)
+		r.Post("/admin/api/deployments/{deployment_id}/fail", h.FailDeployment)
 
 		r.Get("/admin/api/system/overview", h.SystemManagementOverview)
 		r.Get("/admin/api/system/users", h.SystemManagementOverview)

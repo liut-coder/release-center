@@ -1,0 +1,204 @@
+package appreleases
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"strings"
+)
+
+var errDeploymentStoreUnavailable = errors.New("deployment store unavailable")
+
+type DeploymentStore interface {
+	CreateDeploymentTarget(ctx context.Context, req CreateDeploymentTargetRequest) (DeploymentTargetAdmin, error)
+	DeploymentRecords(ctx context.Context) ([]DeploymentRecordAdmin, error)
+	DeploymentRecord(ctx context.Context, deploymentID string) (DeploymentRecordAdmin, error)
+	CreateDeploymentRecord(ctx context.Context, req CreateDeploymentRequest) (DeploymentRecordAdmin, error)
+	UpdateDeploymentRecordStatus(ctx context.Context, deploymentID string, req UpdateDeploymentStatusRequest) (DeploymentRecordAdmin, error)
+}
+
+func (s *Service) CreateDeploymentTarget(ctx context.Context, req CreateDeploymentTargetRequest) (DeploymentActionResponse, error) {
+	store, ok := s.store.(DeploymentStore)
+	if !ok {
+		return DeploymentActionResponse{}, errDeploymentStoreUnavailable
+	}
+	req.ProjectKey = strings.TrimSpace(req.ProjectKey)
+	req.TargetKey = strings.TrimSpace(req.TargetKey)
+	req.Name = strings.TrimSpace(req.Name)
+	req.Provider = normalizeDeploymentProvider(req.Provider)
+	req.Environment = normalizeDeploymentEnvironment(req.Environment)
+	req.EndpointURL = strings.TrimSpace(req.EndpointURL)
+	req.CredentialRef = strings.TrimSpace(req.CredentialRef)
+	if req.ProjectKey == "" || req.TargetKey == "" || req.Provider == "" {
+		return DeploymentActionResponse{}, fmt.Errorf("project_key, target_key and provider are required")
+	}
+	if req.Name == "" {
+		req.Name = req.TargetKey
+	}
+	target, err := store.CreateDeploymentTarget(ctx, req)
+	if err != nil {
+		return DeploymentActionResponse{}, err
+	}
+	return DeploymentActionResponse{OK: true, Target: &target, MessageZh: "部署目标已保存"}, nil
+}
+
+func (s *Service) DeploymentRecords(ctx context.Context) (DeploymentRecordsResponse, error) {
+	store, ok := s.store.(DeploymentStore)
+	if !ok {
+		return DeploymentRecordsResponse{DeploymentRecords: []DeploymentRecordAdmin{}, MessageZh: "部署记录未连接数据库"}, nil
+	}
+	records, err := store.DeploymentRecords(ctx)
+	if err != nil {
+		return DeploymentRecordsResponse{}, err
+	}
+	return DeploymentRecordsResponse{DeploymentRecords: records, MessageZh: "部署记录已读取"}, nil
+}
+
+func (s *Service) DeploymentRecord(ctx context.Context, deploymentID string) (DeploymentActionResponse, error) {
+	store, ok := s.store.(DeploymentStore)
+	if !ok {
+		return DeploymentActionResponse{}, errDeploymentStoreUnavailable
+	}
+	deploymentID = strings.TrimSpace(deploymentID)
+	if deploymentID == "" {
+		return DeploymentActionResponse{}, fmt.Errorf("deployment_id is required")
+	}
+	record, err := store.DeploymentRecord(ctx, deploymentID)
+	if err != nil {
+		return DeploymentActionResponse{}, err
+	}
+	return DeploymentActionResponse{OK: true, Record: &record, MessageZh: "部署记录已读取"}, nil
+}
+
+func (s *Service) CreateDeployment(ctx context.Context, req CreateDeploymentRequest) (DeploymentActionResponse, error) {
+	store, ok := s.store.(DeploymentStore)
+	if !ok {
+		return DeploymentActionResponse{}, errDeploymentStoreUnavailable
+	}
+	req.ProjectKey = strings.TrimSpace(req.ProjectKey)
+	req.TargetID = strings.TrimSpace(req.TargetID)
+	req.TargetKey = strings.TrimSpace(req.TargetKey)
+	req.ProviderStatus = normalizeDeploymentStatus(req.ProviderStatus)
+	req.TriggeredBy = strings.TrimSpace(firstNonBlank(req.TriggeredBy, "admin"))
+	req.LogTail = normalizeWorkerLogLines(req.LogTail)
+	if req.TargetID == "" && (req.ProjectKey == "" || req.TargetKey == "") {
+		return DeploymentActionResponse{}, fmt.Errorf("target_id or project_key + target_key is required")
+	}
+	if req.DryRun {
+		req.ProviderStatus = "dry_run"
+		req.Metadata = mergeMaps(req.Metadata, map[string]any{
+			"execution_mode": "dry_run",
+		})
+	}
+	record, err := store.CreateDeploymentRecord(ctx, req)
+	if err != nil {
+		return DeploymentActionResponse{}, err
+	}
+	return DeploymentActionResponse{OK: true, Record: &record, MessageZh: "部署记录已创建"}, nil
+}
+
+func (s *Service) CompleteDeployment(ctx context.Context, deploymentID string, req UpdateDeploymentStatusRequest) (DeploymentActionResponse, error) {
+	req.ProviderStatus = firstNonBlank(req.ProviderStatus, "success")
+	return s.updateDeploymentStatus(ctx, deploymentID, req, "部署已完成")
+}
+
+func (s *Service) FailDeployment(ctx context.Context, deploymentID string, req UpdateDeploymentStatusRequest) (DeploymentActionResponse, error) {
+	req.ProviderStatus = firstNonBlank(req.ProviderStatus, "failed")
+	if strings.TrimSpace(req.ErrorMessage) == "" {
+		req.ErrorMessage = "deployment failed"
+	}
+	return s.updateDeploymentStatus(ctx, deploymentID, req, "部署失败已记录")
+}
+
+func (s *Service) updateDeploymentStatus(ctx context.Context, deploymentID string, req UpdateDeploymentStatusRequest, message string) (DeploymentActionResponse, error) {
+	store, ok := s.store.(DeploymentStore)
+	if !ok {
+		return DeploymentActionResponse{}, errDeploymentStoreUnavailable
+	}
+	deploymentID = strings.TrimSpace(deploymentID)
+	req.ProviderStatus = normalizeDeploymentStatus(req.ProviderStatus)
+	req.LogTail = normalizeWorkerLogLines(req.LogTail)
+	if deploymentID == "" {
+		return DeploymentActionResponse{}, fmt.Errorf("deployment_id is required")
+	}
+	record, err := store.UpdateDeploymentRecordStatus(ctx, deploymentID, req)
+	if err != nil {
+		return DeploymentActionResponse{}, err
+	}
+	return DeploymentActionResponse{OK: true, Record: &record, MessageZh: message}, nil
+}
+
+func normalizeDeploymentProvider(provider string) string {
+	provider = strings.ToLower(strings.TrimSpace(provider))
+	switch provider {
+	case "cloudflare_pages", "cloudflare_worker", "cloudflare_r2", "generic_webhook", "ssh", "docker", "kubernetes":
+		return provider
+	default:
+		return provider
+	}
+}
+
+func normalizeDeploymentEnvironment(environment string) string {
+	environment = strings.ToLower(strings.TrimSpace(environment))
+	if environment == "" {
+		return "prod"
+	}
+	return environment
+}
+
+func normalizeDeploymentStatus(status string) string {
+	status = strings.ToLower(strings.TrimSpace(status))
+	switch status {
+	case "queued", "running", "success", "failed", "canceled", "dry_run", "external":
+		return status
+	default:
+		return "queued"
+	}
+}
+
+func mergeMaps(base map[string]any, extra map[string]any) map[string]any {
+	merged := map[string]any{}
+	for key, value := range base {
+		merged[key] = value
+	}
+	for key, value := range extra {
+		merged[key] = value
+	}
+	return merged
+}
+
+func cloudflareDeploymentCommand(target DeploymentTargetAdmin, req CreateDeploymentRequest) []string {
+	artifactPath := stringFromAny(req.Metadata["artifact_path"])
+	switch target.Provider {
+	case "cloudflare_pages":
+		args := []string{"wrangler", "pages", "deploy", firstNonBlank(artifactPath, "dist")}
+		if target.CloudflareProjectName != "" {
+			args = append(args, "--project-name", target.CloudflareProjectName)
+		}
+		return args
+	case "cloudflare_worker":
+		args := []string{"wrangler", "deploy"}
+		if target.CloudflareScriptName != "" {
+			args = append(args, "--name", target.CloudflareScriptName)
+		}
+		return args
+	case "cloudflare_r2":
+		objectKey := firstNonBlank(stringFromAny(req.Metadata["object_key"]), "artifact")
+		args := []string{"wrangler", "r2", "object", "put", target.CloudflareBucketName + "/" + objectKey}
+		if artifactPath != "" {
+			args = append(args, "--file", artifactPath)
+		}
+		return args
+	default:
+		return []string{}
+	}
+}
+
+func stringFromAny(value any) string {
+	switch typed := value.(type) {
+	case string:
+		return strings.TrimSpace(typed)
+	default:
+		return ""
+	}
+}
