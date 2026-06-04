@@ -1,5 +1,6 @@
 import { apiRequest } from "@/api/client";
 import type { DeploymentRecord } from "@/api/deployments";
+import type { WorkerTask } from "@/api/workers";
 
 export type ReleaseUnitType = "android" | "web" | "docs" | "worker" | "server" | "docker" | "config" | string;
 export type ReleasePlanStatus =
@@ -180,7 +181,7 @@ export function rollbackReleasePlan(planId: string, payload: ReleasePlanActionPa
 }
 
 export function createReleasePlanDeployment(planId: string, payload: CreateReleasePlanDeploymentPayload) {
-  return apiRequest<{ ok: boolean; plan: ReleasePlan; deployment_records: DeploymentRecord[]; message_zh?: string }>(
+  return apiRequest<{ ok: boolean; plan: ReleasePlan; deployment_records: DeploymentRecord[]; worker_tasks?: WorkerTask[]; message_zh?: string }>(
     `/admin/api/release-plans/${encodeURIComponent(planId)}/deployments`,
     {
       method: "POST",

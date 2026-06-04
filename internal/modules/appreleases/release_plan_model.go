@@ -152,5 +152,6 @@ type ReleasePlanDeploymentResponse struct {
 	OK                bool                    `json:"ok"`
 	Plan              ReleasePlanAdmin        `json:"plan"`
 	DeploymentRecords []DeploymentRecordAdmin `json:"deployment_records"`
+	WorkerTasks       []WorkerTaskAdmin       `json:"worker_tasks,omitempty"`
 	MessageZh         string                  `json:"message_zh,omitempty"`
 }

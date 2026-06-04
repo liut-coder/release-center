@@ -2,6 +2,7 @@ package appreleases
 
 import (
 	"context"
+	"encoding/json"
 	"time"
 
 	"github.com/google/uuid"
@@ -201,7 +202,14 @@ func (s *PostgresStore) AppendWorkerTaskLogs(ctx context.Context, taskID string,
 		  and lease_token = $3
 		  and status in ('leased', 'running')
 	`), taskID, req.WorkerKey, req.LeaseToken, next)
-	return scanWorkerTask(row)
+	task, err := scanWorkerTask(row)
+	if err != nil {
+		return WorkerTaskAdmin{}, err
+	}
+	if err := s.markDeploymentRecordRunning(ctx, task); err != nil {
+		return WorkerTaskAdmin{}, err
+	}
+	return task, nil
 }
 
 func (s *PostgresStore) SaveWorkerTaskArtifacts(ctx context.Context, taskID string, req WorkerTaskArtifactsRequest) (WorkerTaskAdmin, error) {
@@ -221,7 +229,14 @@ func (s *PostgresStore) SaveWorkerTaskArtifacts(ctx context.Context, taskID stri
 		  and lease_token = $3
 		  and status in ('leased', 'running')
 	`), taskID, req.WorkerKey, req.LeaseToken, jsonb(manifest), len(req.Artifacts))
-	return scanWorkerTask(row)
+	task, err := scanWorkerTask(row)
+	if err != nil {
+		return WorkerTaskAdmin{}, err
+	}
+	if err := s.markDeploymentRecordRunning(ctx, task); err != nil {
+		return WorkerTaskAdmin{}, err
+	}
+	return task, nil
 }
 
 func (s *PostgresStore) CompleteWorkerTask(ctx context.Context, taskID string, req WorkerTaskCompleteRequest) (WorkerTaskAdmin, error) {
@@ -298,10 +313,75 @@ func (s *PostgresStore) finishWorkerTask(ctx context.Context, taskID, workerKey,
 			return WorkerTaskAdmin{}, err
 		}
 	}
+	if deploymentID := workerTaskDeploymentRecordID(task.Metadata); deploymentID != "" {
+		if _, err := tx.Exec(ctx, `
+			update deployment_records
+			set external_deployment_id = coalesce(nullif($2, ''), external_deployment_id),
+			    provider_status = $3,
+			    deployment_url = coalesce(nullif($4, ''), deployment_url),
+			    log_tail = case when cardinality($5::text[]) > 0 then $5::text[] else log_tail end,
+			    error_message = $6,
+			    metadata = metadata || $7::jsonb,
+			    finished_at = now(),
+			    duration_ms = case when started_at is null then duration_ms else greatest(extract(epoch from (now() - started_at))::bigint * 1000, 0) end,
+			    updated_at = now()
+			where tenant_id = 'default' and id = $1::uuid
+		`, deploymentID, workerTaskMetadataString(task.Metadata, "external_deployment_id"),
+			deploymentStatusForWorkerStatus(status),
+			workerTaskMetadataString(task.Metadata, "deployment_url"),
+			task.LogTail, errorMessage, jsonb(map[string]any{
+				"worker_task_id": task.ID,
+				"worker_key":     workerKey,
+				"worker_status":  status,
+			})); err != nil {
+			return WorkerTaskAdmin{}, err
+		}
+	}
 	if err := tx.Commit(ctx); err != nil {
 		return WorkerTaskAdmin{}, err
 	}
 	return task, nil
+}
+
+func deploymentStatusForWorkerStatus(status string) string {
+	if status == "success" {
+		return "success"
+	}
+	return "failed"
+}
+
+func (s *PostgresStore) markDeploymentRecordRunning(ctx context.Context, task WorkerTaskAdmin) error {
+	deploymentID := workerTaskDeploymentRecordID(task.Metadata)
+	if deploymentID == "" {
+		return nil
+	}
+	_, err := s.db.Exec(ctx, `
+		update deployment_records
+		set provider_status = 'running',
+		    log_tail = case when cardinality($2::text[]) > 0 then $2::text[] else log_tail end,
+		    metadata = metadata || $3::jsonb,
+		    started_at = coalesce(started_at, now()),
+		    updated_at = now()
+		where tenant_id = 'default'
+		  and id = $1::uuid
+		  and provider_status in ('queued', 'running', 'external')
+	`, deploymentID, task.LogTail, jsonb(map[string]any{
+		"worker_task_id": task.ID,
+		"worker_status":  task.Status,
+	}))
+	return err
+}
+
+func workerTaskDeploymentRecordID(metadata []byte) string {
+	return workerTaskMetadataString(metadata, "deployment_record_id")
+}
+
+func workerTaskMetadataString(metadata []byte, key string) string {
+	var values map[string]any
+	if len(metadata) == 0 || json.Unmarshal(metadata, &values) != nil {
+		return ""
+	}
+	return stringFromAny(values[key])
 }
 
 func scanBuildWorker(row pgx.Row) (BuildWorkerAdmin, error) {

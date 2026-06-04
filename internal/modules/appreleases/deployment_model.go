@@ -80,10 +80,11 @@ type DeploymentRecordAdmin struct {
 }
 
 type DeploymentActionResponse struct {
-	OK        bool                   `json:"ok"`
-	Target    *DeploymentTargetAdmin `json:"target,omitempty"`
-	Record    *DeploymentRecordAdmin `json:"record,omitempty"`
-	MessageZh string                 `json:"message_zh,omitempty"`
+	OK         bool                   `json:"ok"`
+	Target     *DeploymentTargetAdmin `json:"target,omitempty"`
+	Record     *DeploymentRecordAdmin `json:"record,omitempty"`
+	WorkerTask *WorkerTaskAdmin       `json:"worker_task,omitempty"`
+	MessageZh  string                 `json:"message_zh,omitempty"`
 }
 
 type DeploymentRecordsResponse struct {

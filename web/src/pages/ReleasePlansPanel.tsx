@@ -24,6 +24,7 @@ import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { Input } from "@/components/ui/Input";
+import { Switch } from "@/components/ui/Switch";
 import { Table, Td, Th } from "@/components/ui/Table";
 import { formatDateTime } from "@/lib/format";
 
@@ -83,6 +84,7 @@ export function ReleasePlansPanel() {
   const [environmentFilter, setEnvironmentFilter] = useState("全部");
   const [unitTypeFilter, setUnitTypeFilter] = useState("全部");
   const [selectedDeploymentTargetId, setSelectedDeploymentTargetId] = useState("");
+  const [deploymentDryRun, setDeploymentDryRun] = useState(true);
   const [query, setQuery] = useState("");
   const [message, setMessage] = useState("发布计划已就绪。");
   const [messageTone, setMessageTone] = useState<"default" | "success" | "warning" | "danger">("default");
@@ -209,7 +211,7 @@ export function ReleasePlansPanel() {
       if (!effectiveDeploymentTargetId) throw new Error("请选择部署目标");
       return createReleasePlanDeployment(plan.id, {
         target_id: effectiveDeploymentTargetId,
-        dry_run: true,
+        dry_run: deploymentDryRun,
         triggered_by: "admin-web",
         metadata: { source: "admin_web", ui: "release_plans_panel" },
       });
@@ -432,7 +434,7 @@ export function ReleasePlansPanel() {
         <div className="grid gap-4">
           <ReleaseMatrix environments={environments} units={releaseUnits} latestPlanMap={latestPlanMap} />
           <Card>
-            <div className="mb-4 grid gap-3 md:grid-cols-[120px_120px_220px_minmax(0,1fr)_auto]">
+            <div className="mb-4 grid gap-3 md:grid-cols-[110px_110px_220px_120px_minmax(0,1fr)_auto]">
               <Select
                 label="环境"
                 value={environmentFilter}
@@ -450,6 +452,10 @@ export function ReleasePlansPanel() {
                 }))}
                 placeholder="暂无部署目标"
               />
+              <div className="flex h-9 items-center justify-between gap-2 rounded-lg border px-3">
+                <span className="text-xs font-medium">Dry-run</span>
+                <Switch checked={deploymentDryRun} onCheckedChange={setDeploymentDryRun} aria-label="Dry-run 发布计划部署" />
+              </div>
               <div className="relative">
                 <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
                 <Input
@@ -476,6 +482,7 @@ export function ReleasePlansPanel() {
               plans={filteredPlans}
               busy={busy}
               deploymentTargetId={effectiveDeploymentTargetId}
+              deploymentDryRun={deploymentDryRun}
               onAction={(plan, action) => planActionMutation.mutate({ plan, action })}
               onDeploy={(plan) => deploymentMutation.mutate(plan)}
             />
@@ -557,12 +564,14 @@ function ReleasePlanList({
 	plans,
 	busy,
 	deploymentTargetId,
+	deploymentDryRun,
 	onAction,
 	onDeploy,
 }: {
 	plans: ReleasePlan[];
 	busy: boolean;
 	deploymentTargetId: string;
+	deploymentDryRun: boolean;
 	onAction: (plan: ReleasePlan, action: PlanAction) => void;
 	onDeploy: (plan: ReleasePlan) => void;
 }) {
@@ -599,7 +608,7 @@ function ReleasePlanList({
 				</Button>
 				<Button variant="secondary" size="sm" onClick={() => onDeploy(plan)} disabled={busy || !deploymentTargetId || !(plan.artifacts?.length)}>
 					<Cloud className="mr-2 h-3.5 w-3.5" />
-					部署
+					{deploymentDryRun ? "部署" : "投递"}
 				</Button>
 			</div>
 		</div>

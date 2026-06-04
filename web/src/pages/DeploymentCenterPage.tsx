@@ -62,6 +62,7 @@ export function DeploymentCenterPage() {
   const [artifactAppBuildId, setArtifactAppBuildId] = useState("");
   const [artifactAppBuildArtifactId, setArtifactAppBuildArtifactId] = useState("");
   const [deploymentURL, setDeploymentURL] = useState("");
+  const [deploymentDryRun, setDeploymentDryRun] = useState(true);
   const [filter, setFilter] = useState("全部");
   const [message, setMessage] = useState("部署中心已就绪。");
   const [messageTone, setMessageTone] = useState<"default" | "success" | "warning" | "danger">("default");
@@ -142,7 +143,7 @@ export function DeploymentCenterPage() {
         git_commit: deployGitCommit.trim(),
         deployment_url: deploymentURL.trim(),
         triggered_by: "admin-web",
-        dry_run: true,
+        dry_run: deploymentDryRun,
         metadata: {
           source: "admin_web",
           artifact_path: artifactPath.trim(),
@@ -289,7 +290,7 @@ export function DeploymentCenterPage() {
           </Card>
 
           <Card>
-            <SectionTitle title="Dry-run 部署" badge={selectedTarget ? selectedTarget.environment : "未选择"} />
+            <SectionTitle title="部署投递" badge={deploymentDryRun ? "dry-run" : "worker"} />
             <div className="grid gap-2">
               <Select
                 label="目标"
@@ -330,10 +331,14 @@ export function DeploymentCenterPage() {
                 </div>
               ) : null}
               <Input placeholder="deployment url" value={deploymentURL} onChange={(event) => setDeploymentURL(event.target.value)} />
+              <div className="flex items-center justify-between gap-3 rounded-lg border p-3">
+                <div className="text-xs font-medium">Dry-run</div>
+                <Switch checked={deploymentDryRun} onCheckedChange={setDeploymentDryRun} aria-label="Dry-run 部署" />
+              </div>
               {deploymentValidation ? <InlineWarning text={deploymentValidation} /> : null}
               <Button onClick={() => createDeploymentMutation.mutate()} disabled={Boolean(deploymentValidation) || createDeploymentMutation.isPending}>
                 <Play className="mr-2 h-4 w-4" />
-                {createDeploymentMutation.isPending ? "创建中" : "创建 dry-run 部署"}
+                {createDeploymentMutation.isPending ? "创建中" : deploymentDryRun ? "创建 dry-run 部署" : "投递 Worker 部署"}
               </Button>
             </div>
           </Card>

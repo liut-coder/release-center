@@ -171,6 +171,7 @@ func (s *Service) CreateReleasePlanDeployment(ctx context.Context, planID string
 		return ReleasePlanDeploymentResponse{}, fmt.Errorf("release plan artifacts are required")
 	}
 	records := make([]DeploymentRecordAdmin, 0, len(plan.Artifacts))
+	tasks := make([]WorkerTaskAdmin, 0, len(plan.Artifacts))
 	for _, artifact := range plan.Artifacts {
 		metadata := mergeMaps(req.Metadata, map[string]any{
 			"source":            "release_plan",
@@ -193,7 +194,7 @@ func (s *Service) CreateReleasePlanDeployment(ctx context.Context, planID string
 		if _, ok := metadata["object_key"]; !ok {
 			metadata["object_key"] = firstNonBlank(artifact.FileName, artifact.ArtifactName)
 		}
-		record, err := deploymentStore.CreateDeploymentRecord(ctx, CreateDeploymentRequest{
+		deployReq := CreateDeploymentRequest{
 			ProjectKey:         plan.ProjectKey,
 			TargetID:           req.TargetID,
 			TargetKey:          req.TargetKey,
@@ -208,18 +209,34 @@ func (s *Service) CreateReleasePlanDeployment(ctx context.Context, planID string
 			TriggeredBy:        req.TriggeredBy,
 			DryRun:             req.DryRun,
 			Metadata:           metadata,
-		})
+		}
+		record, err := deploymentStore.CreateDeploymentRecord(ctx, deployReq)
 		if err != nil {
 			return ReleasePlanDeploymentResponse{}, err
 		}
 		records = append(records, record)
+		if !req.DryRun {
+			task, err := s.enqueueDeploymentWorkerTask(ctx, record, deployReq)
+			if err != nil {
+				return ReleasePlanDeploymentResponse{}, err
+			}
+			tasks = append(tasks, task)
+		}
 	}
 	return ReleasePlanDeploymentResponse{
 		OK:                true,
 		Plan:              plan,
 		DeploymentRecords: records,
-		MessageZh:         "发布计划部署记录已创建",
+		WorkerTasks:       tasks,
+		MessageZh:         releasePlanDeploymentMessage(req.DryRun),
 	}, nil
+}
+
+func releasePlanDeploymentMessage(dryRun bool) string {
+	if dryRun {
+		return "发布计划部署记录已创建"
+	}
+	return "发布计划部署记录已创建并投递 Worker"
 }
 
 func normalizeReleaseUnitType(unitType string) string {

@@ -2,6 +2,7 @@ package appreleases
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -94,7 +95,16 @@ func (s *Service) CreateDeployment(ctx context.Context, req CreateDeploymentRequ
 	if err != nil {
 		return DeploymentActionResponse{}, err
 	}
-	return DeploymentActionResponse{OK: true, Record: &record, MessageZh: "部署记录已创建"}, nil
+	resp := DeploymentActionResponse{OK: true, Record: &record, MessageZh: "部署记录已创建"}
+	if !req.DryRun {
+		task, err := s.enqueueDeploymentWorkerTask(ctx, record, req)
+		if err != nil {
+			return DeploymentActionResponse{}, err
+		}
+		resp.WorkerTask = &task
+		resp.MessageZh = "部署记录已创建并投递 Worker"
+	}
+	return resp, nil
 }
 
 func (s *Service) CompleteDeployment(ctx context.Context, deploymentID string, req UpdateDeploymentStatusRequest) (DeploymentActionResponse, error) {
@@ -194,6 +204,73 @@ func cloudflareDeploymentCommand(target DeploymentTargetAdmin, req CreateDeploym
 	}
 }
 
+func (s *Service) enqueueDeploymentWorkerTask(ctx context.Context, record DeploymentRecordAdmin, req CreateDeploymentRequest) (WorkerTaskAdmin, error) {
+	workerStore, ok := s.store.(WorkerStore)
+	if !ok {
+		return WorkerTaskAdmin{}, errWorkerStoreUnavailable
+	}
+	metadata := mergeMaps(rawJSONMap(record.Metadata), req.Metadata)
+	metadata = mergeMaps(metadata, map[string]any{
+		"source":               "deployment_record",
+		"deployment_record_id": record.ID,
+		"deployment_target_id": record.TargetID,
+		"deployment_target":    record.TargetKey,
+		"deployment_provider":  record.Provider,
+		"environment":          record.Environment,
+		"version_name":         record.VersionName,
+		"build_number":         record.BuildNumber,
+		"git_commit":           record.GitCommit,
+	})
+	task, err := workerStore.CreateWorkerTask(ctx, CreateWorkerTaskRequest{
+		ProjectKey:     req.ProjectKey,
+		BuildRunID:     record.RunID,
+		TaskType:       "deploy",
+		Action:         deploymentWorkerAction(record.Provider),
+		RequiredLabels: deploymentWorkerLabels(record.Provider),
+		Priority:       deploymentWorkerPriority(record.Environment),
+		Metadata:       metadata,
+	})
+	if err != nil {
+		return WorkerTaskAdmin{}, err
+	}
+	return task, nil
+}
+
+func deploymentWorkerAction(provider string) string {
+	switch provider {
+	case "cloudflare_pages", "cloudflare_worker", "cloudflare_r2", "docker", "kubernetes", "ssh", "generic_webhook":
+		return provider
+	default:
+		return "deploy"
+	}
+}
+
+func deploymentWorkerLabels(provider string) []string {
+	switch provider {
+	case "cloudflare_pages", "cloudflare_worker", "cloudflare_r2":
+		return []string{"cloudflare"}
+	case "docker":
+		return []string{"docker"}
+	case "kubernetes":
+		return []string{"kubernetes"}
+	case "ssh":
+		return []string{"ssh"}
+	default:
+		return []string{}
+	}
+}
+
+func deploymentWorkerPriority(environment string) int {
+	switch normalizeDeploymentEnvironment(environment) {
+	case "prod":
+		return 30
+	case "staging":
+		return 20
+	default:
+		return 10
+	}
+}
+
 func stringFromAny(value any) string {
 	switch typed := value.(type) {
 	case string:
@@ -201,4 +278,15 @@ func stringFromAny(value any) string {
 	default:
 		return ""
 	}
+}
+
+func rawJSONMap(data []byte) map[string]any {
+	if len(data) == 0 {
+		return map[string]any{}
+	}
+	var out map[string]any
+	if err := json.Unmarshal(data, &out); err != nil || out == nil {
+		return map[string]any{}
+	}
+	return out
 }

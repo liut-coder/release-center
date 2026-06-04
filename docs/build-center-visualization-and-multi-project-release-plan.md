@@ -226,6 +226,7 @@ POST /api/v1/workers/tasks/{task_id}/fail
 - `worker_tasks.required_labels` 使用标签子集匹配，支持 Linux/Windows/Android/Docker/Cloudflare 等构建能力调度。
 - Admin API 支持查看 Worker 池和任务队列，并可从后台创建 queued worker task。
 - Admin 前端新增 Worker 接入页面，支持 Worker 状态、标签能力、任务队列和手工投递任务可视化。
+- 非 dry-run 部署会自动投递 `deploy` 类型 Worker 任务，Worker complete/fail 后回填 `deployment_records` 状态、日志和外部部署信息。
 
 worker 通过标签匹配任务：
 
@@ -312,8 +313,9 @@ credential_ref=cf_token_release_prod
 - Admin API 支持创建 `deployment_targets` 和写入/查询 `deployment_records`。
 - `POST /admin/api/deployments` 可按 project + target 创建部署记录，支持 dry-run。
 - Cloudflare Pages/Workers/R2 目标会生成 wrangler 准备命令写入部署记录 metadata，等待凭证和执行器接入。
+- 非 dry-run Cloudflare 部署会按 provider 投递带 `cloudflare` 标签的 Worker 任务，外部 worker 可读取 prepared command 执行 wrangler。
 - 支持 `/complete` 和 `/fail` 回填外部部署状态、URL、日志和错误信息。
-- Admin 前端新增部署中心，支持部署目标维护、从制品中心选择制品创建 Cloudflare Pages/Worker/R2 dry-run 部署记录、prepared command 展示和状态回填。
+- Admin 前端新增部署中心，支持部署目标维护、从制品中心选择制品创建 Cloudflare Pages/Worker/R2 dry-run 或 Worker 投递部署记录、prepared command 展示和状态回填。
 
 ## 7. 全流程闭环
 
@@ -350,7 +352,7 @@ GitHub push/tag
 ```text
 Web dist / Worker bundle 已登记
   -> 选择 deployment_target
-  -> 执行 wrangler
+  -> dry-run 记录或投递 Worker 执行 wrangler
   -> 写 deployment_records
   -> 回填 URL / deployment id / 状态
 ```

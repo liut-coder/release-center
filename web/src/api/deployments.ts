@@ -1,4 +1,5 @@
 import { apiRequest } from "@/api/client";
+import type { WorkerTask } from "@/api/workers";
 
 export type DeploymentProvider = "cloudflare_pages" | "cloudflare_worker" | "cloudflare_r2" | "generic_webhook" | "ssh" | "docker" | "kubernetes" | string;
 export type DeploymentStatus = "queued" | "running" | "success" | "failed" | "canceled" | "dry_run" | "external" | string;
@@ -113,7 +114,7 @@ export function getDeployments() {
 }
 
 export function createDeployment(payload: CreateDeploymentPayload) {
-  return apiRequest<{ ok: boolean; record: DeploymentRecord; message_zh?: string }>("/admin/api/deployments", {
+  return apiRequest<{ ok: boolean; record: DeploymentRecord; worker_task?: WorkerTask; message_zh?: string }>("/admin/api/deployments", {
     method: "POST",
     body: JSON.stringify(payload),
   });
