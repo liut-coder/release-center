@@ -331,7 +331,7 @@ function RepositoryCell({ repository }: { repository?: CodeRepository }) {
 function TargetSummary({ targets }: { targets: DeploymentTarget[] }) {
   if (!targets.length) return <span className="text-muted-foreground">未配置</span>;
   const enabled = targets.filter((target) => target.enabled !== false).length;
-  const cloudflare = targets.filter((target) => target.provider === "cloudflare").length;
+  const cloudflare = targets.filter((target) => target.provider.startsWith("cloudflare_")).length;
   return (
     <div className="min-w-0">
       <div className="truncate">{enabled}/{targets.length} 启用</div>
@@ -529,7 +529,7 @@ function buildMetrics(projects: BuildCenterProject[], targets: DeploymentTarget[
     activeRuns: runs.filter((run) => runningStatuses.has(run.status)).length,
     recentRuns: runs.length,
     targets: targets.length,
-    cloudflareTargets: targets.filter((target) => target.provider === "cloudflare").length,
+    cloudflareTargets: targets.filter((target) => target.provider.startsWith("cloudflare_")).length,
   };
 }
 
