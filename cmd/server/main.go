@@ -96,8 +96,9 @@ func main() {
 		w.WriteHeader(http.StatusNoContent)
 	})
 	r.Mount("/", handler.RoutesWithOptions(appreleases.RouteOptions{
-		AdminMiddleware: tokenMiddlewares(env("ADMIN_TOKEN", "")),
-		CIMiddleware:    tokenMiddlewares(env("CI_TOKEN", env("GAME_HELPER_CI_TOKEN", ""))),
+		AdminMiddleware:   tokenMiddlewares(env("ADMIN_TOKEN", "")),
+		CIMiddleware:      tokenMiddlewares(env("CI_TOKEN", env("GAME_HELPER_CI_TOKEN", ""))),
+		WebhookMiddleware: webhookMiddlewares(),
 	}))
 	mountWeb(r, logger, env("WEB_DIST", "web/dist"))
 
@@ -145,6 +146,16 @@ func tokenMiddlewares(token string) []func(http.Handler) http.Handler {
 		return nil
 	}
 	return []func(http.Handler) http.Handler{appreleases.BearerTokenMiddleware(token)}
+}
+
+func webhookMiddlewares() []func(http.Handler) http.Handler {
+	fallback := env("WEBHOOK_SECRET", "")
+	githubSecret := env("GITHUB_WEBHOOK_SECRET", env("WEBHOOK_GITHUB_SECRET", fallback))
+	giteaSecret := env("GITEA_WEBHOOK_SECRET", env("WEBHOOK_GITEA_SECRET", fallback))
+	if strings.TrimSpace(githubSecret) == "" && strings.TrimSpace(giteaSecret) == "" {
+		return nil
+	}
+	return []func(http.Handler) http.Handler{appreleases.WebhookSignatureMiddleware(githubSecret, giteaSecret)}
 }
 
 func env(key, fallback string) string {

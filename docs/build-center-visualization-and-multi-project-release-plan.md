@@ -302,9 +302,28 @@ GitHub Actions 仍然可作为外部 CI 使用。外部 CI 构建完成后直接
 - `/api/v1/webhooks/github` 和 `/api/v1/webhooks/gitea` 继续先写入 `webhook_events`。
 - Webhook 入库后会匹配已启用的 `code_repositories.webhook_enabled` 和 `webhook_routes.enabled`。
 - 命中 route 后创建 `build_center_runs` 并进入构建中心执行链路。
+- `cmd/server` 已接入 GitHub/Gitea webhook HMAC 签名校验中间件；配置 secret 后才放行真实 webhook 请求。
 - Admin API 已支持保存 `release_projects`、`code_repositories`、`build_profiles` 和 `webhook_routes`，用于后台接入 GitHub 仓库和构建 profile。
 - Admin 前端新增集成配置页面，支持维护项目、Git 仓库、构建 profile、Webhook route 和对应 credential/secret 引用。
 - 第 5 号 migration 已预置 release-center 的 main push 和 tag route，但默认 disabled；配置 GitHub secret/认证后再开启仓库和 route。
+
+Webhook secret 环境变量：
+
+```text
+GITHUB_WEBHOOK_SECRET    GitHub X-Hub-Signature-256 校验
+GITEA_WEBHOOK_SECRET     Gitea X-Gitea-Signature 校验
+WEBHOOK_SECRET           两者共用的 fallback secret
+```
+
+真实 GitHub 接入验收顺序：
+
+```text
+1. 在 GitHub 仓库 Webhooks 配置 Payload URL: /api/v1/webhooks/github。
+2. 设置 Secret，并在 server 环境配置 GITHUB_WEBHOOK_SECRET。
+3. 在集成配置页启用 code_repositories.webhook_enabled 和 trigger_on_push / trigger_on_tag。
+4. 启用匹配的 webhook_routes。
+5. push main 或 tag 后检查 webhook_events、build_center_runs 和构建中心页面。
+```
 
 ## 6. Cloudflare 接入
 
