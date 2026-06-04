@@ -66,6 +66,7 @@ import { Switch } from "@/components/ui/Switch";
 import { Table, Td, Th } from "@/components/ui/Table";
 import { cn } from "@/lib/cn";
 import { formatDateTime } from "@/lib/format";
+import { ReleasePlansPanel } from "@/pages/ReleasePlansPanel";
 
 const channels = ["dev", "internal", "beta", "stable", "emergency"];
 const resourceChannels = ["dev", "internal", "beta", "stable"];
@@ -83,9 +84,10 @@ const releaseTargetTypes = [
 ];
 const channelFilters = ["全部", ...channels];
 const tabs = [
+  { key: "plans", label: "发布计划" },
   { key: "overview", label: "概览" },
   { key: "builds", label: "构建记录" },
-  { key: "app", label: "App 发布" },
+  { key: "app", label: "Android 发布" },
   { key: "resources", label: "资源增量" },
   { key: "devices", label: "设备版本" },
   { key: "stats", label: "升级统计" },
@@ -113,7 +115,7 @@ type BuildVersionSuggestion = {
 };
 
 export function AppReleasesPage() {
-  const [activeTab, setActiveTab] = useState<ReleaseTab>("overview");
+  const [activeTab, setActiveTab] = useState<ReleaseTab>("plans");
   const [channelFilter, setChannelFilter] = useState("全部");
   const [query, setQuery] = useState("");
   const [gitRef, setGitRef] = useState("main");
@@ -163,6 +165,7 @@ export function AppReleasesPage() {
   const releasesQuery = useQuery({
     queryKey: ["app-releases"],
     queryFn: getAppReleases,
+    enabled: activeTab !== "plans",
     refetchInterval: (query) => {
       const jobs = query.state.data?.build_jobs ?? [];
       return jobs.some((job) => job.status === "queued" || job.status === "running") ? 5_000 : false;
@@ -575,29 +578,37 @@ export function AppReleasesPage() {
 
   return (
     <>
-      <PageHeader title="App 发布">
-        <MockBadge show={data?._mock} />
-        <Button variant="secondary" onClick={() => releasesQuery.refetch()} disabled={releasesQuery.isFetching}>
-          <RefreshCw className="mr-2 h-4 w-4" />
-          刷新
-        </Button>
+      <PageHeader title="发布中心">
+        {activeTab !== "plans" ? <MockBadge show={data?._mock} /> : null}
+        {activeTab !== "plans" ? (
+          <Button variant="secondary" onClick={() => releasesQuery.refetch()} disabled={releasesQuery.isFetching}>
+            <RefreshCw className="mr-2 h-4 w-4" />
+            刷新
+          </Button>
+        ) : null}
       </PageHeader>
 
       <TabBar activeTab={activeTab} onChange={setActiveTab} />
 
-      {releasesQuery.isError ? <ApiErrorState error={releasesQuery.error} title="App 发布数据读取失败" /> : null}
-      {mutationError ? <ApiErrorState error={mutationError} title="App 发布操作失败" /> : null}
+      {activeTab !== "plans" && releasesQuery.isError ? <ApiErrorState error={releasesQuery.error} title="App 发布数据读取失败" /> : null}
+      {activeTab !== "plans" && mutationError ? <ApiErrorState error={mutationError} title="App 发布操作失败" /> : null}
 
-      <div className="mb-4 grid gap-3 md:grid-cols-4">
-        <Metric label="正式版本" value={stableRelease ? `${stableRelease.version_name} (${stableRelease.version_code})` : "未发布"} note={stableRelease?.channel || "stable"} />
-        <Metric label="资源版本" value={latestResource?.resource_version ?? "-"} note={latestResource?.channel || "-"} />
-        <Metric label="活跃设备" value={stats.activeDevices} note={`${stats.pendingDevices} 台待更新`} />
-        <Metric label="升级成功率" value={`${stats.successRate}%`} note={`${stats.failedEvents} 个失败事件`} />
-      </div>
+      {activeTab !== "plans" ? (
+        <div className="mb-4 grid gap-3 md:grid-cols-4">
+          <Metric label="正式版本" value={stableRelease ? `${stableRelease.version_name} (${stableRelease.version_code})` : "未发布"} note={stableRelease?.channel || "stable"} />
+          <Metric label="资源版本" value={latestResource?.resource_version ?? "-"} note={latestResource?.channel || "-"} />
+          <Metric label="活跃设备" value={stats.activeDevices} note={`${stats.pendingDevices} 台待更新`} />
+          <Metric label="升级成功率" value={`${stats.successRate}%`} note={`${stats.failedEvents} 个失败事件`} />
+        </div>
+      ) : null}
 
-      <div className="mb-4">
-        <StatusMessage tone={messageTone} text={message || "发版中心已按 APK 整包、资源增量、设备回传和审计链路组织。"} />
-      </div>
+      {activeTab !== "plans" ? (
+        <div className="mb-4">
+          <StatusMessage tone={messageTone} text={message || "Android 兼容链路已就绪。"} />
+        </div>
+      ) : null}
+
+      {activeTab === "plans" ? <ReleasePlansPanel /> : null}
 
       {activeTab === "overview" ? (
         <OverviewPanel

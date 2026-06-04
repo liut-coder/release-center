@@ -57,7 +57,7 @@ const navigation: Array<{
     group: "工作台",
     items: [
       { key: "dashboard", label: "首页", icon: LayoutDashboard },
-      { key: "release-center", label: "App 发版中心", icon: Rocket },
+      { key: "release-center", label: "发布中心", icon: Rocket },
       { key: "build-center", label: "构建中心", icon: Hammer },
     ],
   },

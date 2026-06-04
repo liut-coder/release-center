@@ -115,6 +115,7 @@ integration_credentials
 - 第 7 号 migration 新增 `release_environments`、`release_units`、`release_plans`、`release_plan_artifacts`。
 - 已预置 dev/test/staging/prod 环境和 release-center 的 Web/Server/Worker 发布单元。
 - Admin API 支持创建发布单元、创建/查询发布计划，并支持 publish/pause/rollback 状态动作。
+- Admin 前端发布中心默认进入发布计划工作台，支持项目/单元/环境矩阵、发布单元维护、发布计划创建和状态动作。
 - 旧 APK 发布接口继续保留，后续再迁移成 Android 发布单元入口。
 
 ### 表职责
