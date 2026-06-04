@@ -4,6 +4,7 @@ import {
   BookOpen,
   Cloud,
   Database,
+  GitBranch,
   Hammer,
   Home,
   KeyRound,
@@ -43,6 +44,7 @@ import { AppReleasesPage } from "@/pages/AppReleasesPage";
 import { ArtifactCenterPage } from "@/pages/ArtifactCenterPage";
 import { BuildCenterPage } from "@/pages/BuildCenterPage";
 import { DeploymentCenterPage } from "@/pages/DeploymentCenterPage";
+import { IntegrationConfigPage } from "@/pages/IntegrationConfigPage";
 import { WorkerCenterPage } from "@/pages/WorkerCenterPage";
 import { ApiErrorState } from "@/components/stable/StableAdminComponents";
 import { Badge } from "@/components/ui/Badge";
@@ -60,6 +62,7 @@ type AdminPageKey =
   | "artifact-center"
   | "worker-center"
   | "deployment-center"
+  | "integration-config"
   | "users"
   | "roles"
   | "permissions"
@@ -79,6 +82,7 @@ const navigation: Array<{
       { key: "artifact-center", label: "制品中心", icon: Package },
       { key: "worker-center", label: "Worker 接入", icon: Server },
       { key: "deployment-center", label: "部署中心", icon: Cloud },
+      { key: "integration-config", label: "集成配置", icon: GitBranch },
     ],
   },
   {
@@ -376,6 +380,7 @@ function renderPage(activePage: AdminPageKey, setActivePage: (page: AdminPageKey
   if (activePage === "artifact-center") return <ArtifactCenterPage />;
   if (activePage === "worker-center") return <WorkerCenterPage />;
   if (activePage === "deployment-center") return <DeploymentCenterPage />;
+  if (activePage === "integration-config") return <IntegrationConfigPage />;
   if (activePage === "users") return <UsersPage users={context.system.users} loading={context.loading} error={context.error} actions={context.actions} />;
   if (activePage === "roles") return <RolesPage roles={context.system.roles} loading={context.loading} error={context.error} actions={context.actions} />;
   if (activePage === "permissions") {
