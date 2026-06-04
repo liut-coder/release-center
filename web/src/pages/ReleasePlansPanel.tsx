@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { FileText, History, PauseCircle, RefreshCw, Rocket, Search, ShieldCheck, SlidersHorizontal, Upload } from "lucide-react";
+import { getArtifactCenterOverview, type ArtifactCenterItem } from "@/api/artifacts";
 import { getBuildCenterOverview } from "@/api/buildCenter";
 import {
   createReleasePlan,
@@ -26,6 +27,7 @@ import { formatDateTime } from "@/lib/format";
 
 const RELEASE_PLANS_QUERY_KEY = ["release-plans"] as const;
 const BUILD_CENTER_PROJECTS_QUERY_KEY = ["release-plans-build-center-projects"] as const;
+const ARTIFACT_CENTER_QUERY_KEY = ["release-plans-artifacts"] as const;
 
 const unitTypeOptions: Array<{ value: ReleaseUnitType; label: string }> = [
   { value: "android", label: "Android" },
@@ -66,6 +68,10 @@ export function ReleasePlansPanel() {
   const [artifactType, setArtifactType] = useState("web_dist");
   const [artifactFileName, setArtifactFileName] = useState("");
   const [artifactRef, setArtifactRef] = useState("");
+  const [selectedArtifactId, setSelectedArtifactId] = useState("");
+  const [artifactBuildRunId, setArtifactBuildRunId] = useState("");
+  const [artifactAppBuildId, setArtifactAppBuildId] = useState("");
+  const [artifactAppBuildArtifactId, setArtifactAppBuildArtifactId] = useState("");
   const [newUnitProjectKey, setNewUnitProjectKey] = useState("release-center");
   const [newUnitKey, setNewUnitKey] = useState("");
   const [newUnitName, setNewUnitName] = useState("");
@@ -85,12 +91,17 @@ export function ReleasePlansPanel() {
     queryKey: BUILD_CENTER_PROJECTS_QUERY_KEY,
     queryFn: getBuildCenterOverview,
   });
+  const artifactsQuery = useQuery({
+    queryKey: ARTIFACT_CENTER_QUERY_KEY,
+    queryFn: getArtifactCenterOverview,
+  });
 
   const environments = useMemo(() => [...(overviewQuery.data?.environments ?? [])].sort((left, right) => left.sort_order - right.sort_order), [
     overviewQuery.data?.environments,
   ]);
   const releaseUnits = overviewQuery.data?.release_units ?? [];
   const releasePlans = overviewQuery.data?.release_plans ?? [];
+  const artifacts = artifactsQuery.data?.artifacts ?? [];
   const projectKeys = useMemo(
     () =>
       unique([
@@ -188,7 +199,9 @@ export function ReleasePlansPanel() {
   const busy = createPlanMutation.isPending || createUnitMutation.isPending || planActionMutation.isPending;
 
   function buildCreatePlanPayload(): CreateReleasePlanPayload {
-    const hasArtifact = [artifactName, artifactType, artifactFileName, artifactRef].some((value) => value.trim());
+    const hasArtifact = [artifactName, artifactType, artifactFileName, artifactRef, artifactBuildRunId, artifactAppBuildId, artifactAppBuildArtifactId].some((value) =>
+      value.trim(),
+    );
     return {
       project_key: projectKey.trim(),
       unit_key: unitKey.trim(),
@@ -209,7 +222,10 @@ export function ReleasePlansPanel() {
               artifact_type: artifactType.trim() || "artifact",
               file_name: artifactFileName.trim(),
               immutable_ref: artifactRef.trim(),
-              metadata: { source: "admin_web" },
+              build_run_id: artifactBuildRunId.trim(),
+              app_build_id: artifactAppBuildId.trim(),
+              app_build_artifact_id: artifactAppBuildArtifactId.trim(),
+              metadata: { source: "admin_web", artifact_center_id: selectedArtifactId || undefined },
             },
           ]
         : [],
@@ -217,10 +233,34 @@ export function ReleasePlansPanel() {
     };
   }
 
+  function applyArtifact(artifact?: ArtifactCenterItem) {
+    if (!artifact) {
+      setSelectedArtifactId("");
+      setArtifactBuildRunId("");
+      setArtifactAppBuildId("");
+      setArtifactAppBuildArtifactId("");
+      return;
+    }
+    setSelectedArtifactId(artifact.id);
+    setArtifactName(artifact.name || artifact.file_name || "artifact");
+    setArtifactType(artifact.artifact_type || "artifact");
+    setArtifactFileName(artifact.file_name || "");
+    setArtifactRef(artifact.immutable_ref || `${artifact.source}:${artifact.id}`);
+    setArtifactBuildRunId(artifact.run_id || "");
+    setArtifactAppBuildId(artifact.build_id || "");
+    setArtifactAppBuildArtifactId(artifact.app_build_artifact_id || "");
+    if (artifact.project_key) setProjectKey(artifact.project_key);
+    if (artifact.version_name) setVersionName(artifact.version_name);
+    if (artifact.build_number) setBuildNumber(String(artifact.build_number));
+    if (artifact.git_commit) setGitCommit(artifact.git_commit);
+    if (artifact.channel) setChannel(artifact.channel);
+  }
+
   return (
     <div className="grid gap-4">
       {overviewQuery.isError ? <ApiErrorState error={overviewQuery.error} title="发布计划读取失败" /> : null}
       {projectsQuery.isError ? <ApiErrorState error={projectsQuery.error} title="项目列表读取失败" /> : null}
+      {artifactsQuery.isError ? <ApiErrorState error={artifactsQuery.error} title="制品中心读取失败" /> : null}
       {mutationError ? <ApiErrorState error={mutationError} title="发布计划操作失败" /> : null}
       <StatusMessage text={message} tone={messageTone} />
 
@@ -287,12 +327,31 @@ export function ReleasePlansPanel() {
                   制品引用
                 </div>
                 <div className="grid gap-2">
+                  <Select
+                    label="制品"
+                    value={selectedArtifactId}
+                    onChange={(value) => applyArtifact(artifacts.find((artifact) => artifact.id === value))}
+                    options={[
+                      { value: "", label: artifactsQuery.isLoading ? "正在读取制品" : "手动填写" },
+                      ...artifacts.slice(0, 80).map((artifact) => ({
+                        value: artifact.id,
+                        label: artifactOptionLabel(artifact),
+                      })),
+                    ]}
+                  />
                   <div className="grid grid-cols-2 gap-2">
                     <Input placeholder="artifact name" value={artifactName} onChange={(event) => setArtifactName(event.target.value)} />
                     <Input placeholder="artifact type" value={artifactType} onChange={(event) => setArtifactType(event.target.value)} />
                   </div>
                   <Input placeholder="file name / object key" value={artifactFileName} onChange={(event) => setArtifactFileName(event.target.value)} />
                   <Input placeholder="immutable ref / sha256 / r2 key" value={artifactRef} onChange={(event) => setArtifactRef(event.target.value)} />
+                  {selectedArtifactId ? (
+                    <div className="grid gap-1 rounded-md border bg-white p-2 font-mono text-[11px] text-muted-foreground">
+                      <span>run={artifactBuildRunId || "-"}</span>
+                      <span>build={artifactAppBuildId || "-"}</span>
+                      <span>artifact={artifactAppBuildArtifactId || "-"}</span>
+                    </div>
+                  ) : null}
                 </div>
               </div>
               {createPlanValidation ? <InlineWarning text={createPlanValidation} /> : null}
@@ -363,7 +422,14 @@ export function ReleasePlansPanel() {
                   onChange={(event) => setQuery(event.target.value)}
                 />
               </div>
-              <Button variant="secondary" onClick={() => overviewQuery.refetch()} disabled={overviewQuery.isFetching}>
+              <Button
+                variant="secondary"
+                onClick={() => {
+                  overviewQuery.refetch();
+                  artifactsQuery.refetch();
+                }}
+                disabled={overviewQuery.isFetching || artifactsQuery.isFetching}
+              >
                 <RefreshCw className="mr-2 h-4 w-4" />
                 刷新
               </Button>
@@ -692,6 +758,12 @@ function unitTypeLabel(type?: ReleaseUnitType) {
 function releaseTargetLabel(type?: string, value?: string) {
   if (!type || type === "all") return "全部";
   return `${targetTypeOptions.find((item) => item.value === type)?.label ?? type}: ${value || "-"}`;
+}
+
+function artifactOptionLabel(artifact: ArtifactCenterItem) {
+  const scope = artifact.project_key || artifact.app_key || artifact.source;
+  const version = artifact.version_name ? `${artifact.version_name}${artifact.build_number ? ` #${artifact.build_number}` : ""}` : artifact.artifact_type;
+  return `${scope} / ${artifact.name || artifact.file_name || artifact.id.slice(0, 8)} / ${version}`;
 }
 
 function countEnabledUnits(units: ReleaseUnit[]) {

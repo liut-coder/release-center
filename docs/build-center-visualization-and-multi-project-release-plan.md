@@ -118,6 +118,7 @@ integration_credentials
 - Admin 前端发布中心默认进入发布计划工作台，支持项目/单元/环境矩阵、发布单元维护、发布计划创建和状态动作。
 - Admin API 新增制品中心，`GET /admin/api/artifacts` 聚合 `app_build_artifacts` 和 `build_center_run_artifacts`，详情接口返回稳定制品引用 `immutable_ref`。
 - Admin 前端新增制品中心页面，支持统一浏览、筛选、查看制品详情和复制发布/部署引用。
+- 发布计划创建表单已接入制品中心，可选择制品后自动带入版本、build number、commit、`immutable_ref` 和 build/run/artifact 关联 ID。
 - 旧 APK 发布接口继续保留，后续再迁移成 Android 发布单元入口。
 
 ### 表职责
