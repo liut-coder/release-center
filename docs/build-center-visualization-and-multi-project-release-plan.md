@@ -422,3 +422,63 @@ worker 注册
 - 制品中心统一聚合构建中心产物和 App 构建制品，作为发布计划和部署记录的入口。
 
 多环境发布计划、部署记录、外部 worker API 已进入当前分支；Cloudflare 真部署和审批/RBAC 继续放在后续小分支，避免一次改动过大。
+
+## 10. 2026-06-05 进度落档
+
+当前工作分支：
+
+```text
+feat/build-center-visualization
+```
+
+当前公网验收入口：
+
+```text
+http://193.123.98.20:18085/
+```
+
+本分支已经把轻量化架构从“方案”推进到可视化闭环雏形：
+
+- 构建中心：项目、仓库、profile、webhook route、构建运行和产物已经有 Admin API 和后台工作台。
+- 制品中心：统一聚合 `app_build_artifacts` 与 `build_center_run_artifacts`，发布计划和部署记录可以复用不可变制品引用。
+- 发布中心：新增多环境、多发布单元和发布计划，不再只面向 APK；旧 APK 发布入口保留。
+- 部署中心：支持多项目部署目标、Cloudflare Pages/Workers/R2、Docker、Webhook、SSH、Kubernetes 等 provider 预留，支持 dry-run 和非 dry-run 投递。
+- 集成配置：Git 仓库、构建 profile、webhook route 和 credential/secret 引用已经进入后台维护页面。
+- Worker 接入：外部机器可注册、心跳、领取任务、上传日志和产物、complete/fail 回填状态。
+- 部署闭环：非 dry-run 部署会创建 `deploy` 类型 Worker task，Worker 回传后更新 `deployment_records` 的状态、日志、外部部署 ID 和 URL。
+
+当前本地提交序列：
+
+```text
+0dbde09 feat(artifacts): add artifact center workbench
+d35fb2a feat(release): select artifacts for release plans
+1a82bd7 feat(deploy): select artifacts for deployments
+6928ebd feat(build-center): add integration config api
+0732b3f feat(integrations): add integration config workbench
+8f28956 feat(release): create deployments from release plans
+761ce0c feat(deploy): dispatch deployments to workers
+```
+
+本次落档前验证通过：
+
+```text
+go test ./...
+npm --prefix web run typecheck
+npm --prefix web run build
+```
+
+GitHub 推送状态：
+
+```text
+origin=https://github.com/liut-coder/release-center.git
+当前环境缺少 GitHub HTTPS 凭据，push 会失败在用户名读取阶段。
+配置凭据后执行：git push -u origin feat/build-center-visualization
+```
+
+下一批建议按小步提交推进：
+
+- Cloudflare 真实执行器：提供 worker 侧 wrangler 执行脚本、凭据注入约定、Pages/Workers/R2 smoke。
+- GitHub 接入验收：配置 webhook secret/route enable，完成 push/tag 自动创建构建任务的真实仓库 smoke。
+- Android 发布单元迁移：把旧 APK 发布页收敛进统一 release unit，同时保留 update-check 兼容 API。
+- 审批/RBAC/审计：prod 部署审批、构建/发布/部署权限拦截、关键动作写 `audit_events`。
+- 回滚执行闭环：基于上一条成功 `deployment_records` 或 `release_plans` 生成回滚计划并投递 Worker。
