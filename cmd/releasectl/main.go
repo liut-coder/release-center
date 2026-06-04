@@ -37,6 +37,8 @@ func main() {
 		err = runManifestPublicKey(os.Args[2:])
 	case "resource-upload":
 		err = runResourceUpload(os.Args[2:])
+	case "worker-run":
+		err = runWorkerRun(os.Args[2:])
 	default:
 		err = fmt.Errorf("unknown command %q", os.Args[1])
 	}
@@ -54,7 +56,8 @@ func usage() {
   releasectl resource-pack -version 20260601.1 -title "运行资源更新" -out dist/resources -root resources
   releasectl manifest-public-key -private-key "$MANIFEST_PRIVATE_KEY"
   releasectl manifest-verify -manifest dist/resources/manifest-20260601.1.json -public-key "$MANIFEST_PUBLIC_KEY"
-  releasectl resource-upload -base-url http://127.0.0.1:18080 -bundle dist/resources/bundle-20260601.1.json -username admin -password admin123 [-publish]`)
+  releasectl resource-upload -base-url http://127.0.0.1:18080 -bundle dist/resources/bundle-20260601.1.json -username admin -password admin123 [-publish]
+  releasectl worker-run -base-url http://127.0.0.1:18080 -token "$GAME_HELPER_CI_TOKEN" -worker-key cf-prod-1 -labels linux,node,cloudflare -execute`)
 }
 
 func runArtifactUpload(args []string) error {

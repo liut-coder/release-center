@@ -227,6 +227,30 @@ POST /api/v1/workers/tasks/{task_id}/fail
 - Admin API 支持查看 Worker 池和任务队列，并可从后台创建 queued worker task。
 - Admin 前端新增 Worker 接入页面，支持 Worker 状态、标签能力、任务队列和手工投递任务可视化。
 - 非 dry-run 部署会自动投递 `deploy` 类型 Worker 任务，Worker complete/fail 后回填 `deployment_records` 状态、日志和外部部署信息。
+- `releasectl worker-run` 已作为外部机器 agent 接入现有 Worker API，支持注册、心跳、领取任务、执行 `metadata.command` / `metadata.prepared_command`、回传日志和 complete/fail。
+
+外部机器最小启动方式：
+
+```bash
+releasectl worker-run \
+  -base-url http://193.123.98.20:18085 \
+  -token "$GAME_HELPER_CI_TOKEN" \
+  -worker-key cf-prod-1 \
+  -labels linux,node,cloudflare \
+  -workdir /srv/release-center \
+  -execute
+```
+
+`-execute` 是显式执行开关。未开启时 agent 会领取任务、写入拒绝执行日志并 fail 任务，避免外部机器误执行来自服务端的命令。
+
+Worker 任务命令来源优先级：
+
+```text
+metadata.prepared_command  # 推荐用于部署，数组形式避免 shell 解析差异
+metadata.command           # 手工任务，可为字符串命令
+metadata.commands[action]  # 构建 profile 或动作映射
+metadata.commands.default
+```
 
 worker 通过标签匹配任务：
 
@@ -312,10 +336,18 @@ credential_ref=cf_token_release_prod
 
 - Admin API 支持创建 `deployment_targets` 和写入/查询 `deployment_records`。
 - `POST /admin/api/deployments` 可按 project + target 创建部署记录，支持 dry-run。
-- Cloudflare Pages/Workers/R2 目标会生成 wrangler 准备命令写入部署记录 metadata，等待凭证和执行器接入。
+- Cloudflare Pages/Workers/R2 目标会生成 wrangler 准备命令写入部署记录 metadata。
 - 非 dry-run Cloudflare 部署会按 provider 投递带 `cloudflare` 标签的 Worker 任务，外部 worker 可读取 prepared command 执行 wrangler。
+- `releasectl worker-run -labels linux,node,cloudflare -execute` 可在已安装 wrangler 的机器上执行这些 prepared command。
 - 支持 `/complete` 和 `/fail` 回填外部部署状态、URL、日志和错误信息。
 - Admin 前端新增部署中心，支持部署目标维护、从制品中心选择制品创建 Cloudflare Pages/Worker/R2 dry-run 或 Worker 投递部署记录、prepared command 展示和状态回填。
+
+Cloudflare worker 机器凭据约定：
+
+```text
+CLOUDFLARE_API_TOKEN     wrangler 使用的真实 token，不写入数据库和 Git
+CLOUDFLARE_ACCOUNT_ID    需要账号上下文时在机器环境提供
+```
 
 ## 7. 全流程闭环
 
