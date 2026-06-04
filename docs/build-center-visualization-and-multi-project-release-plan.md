@@ -110,6 +110,13 @@ worker_tasks
 integration_credentials
 ```
 
+当前已落地：
+
+- 第 7 号 migration 新增 `release_environments`、`release_units`、`release_plans`、`release_plan_artifacts`。
+- 已预置 dev/test/staging/prod 环境和 release-center 的 Web/Server/Worker 发布单元。
+- Admin API 支持创建发布单元、创建/查询发布计划，并支持 publish/pause/rollback 状态动作。
+- 旧 APK 发布接口继续保留，后续再迁移成 Android 发布单元入口。
+
 ### 表职责
 
 `release_projects`
