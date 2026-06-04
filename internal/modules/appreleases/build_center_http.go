@@ -32,6 +32,32 @@ func (h *Handler) BuildCenterProject(w http.ResponseWriter, r *http.Request) {
 	httpx.JSON(w, http.StatusOK, resp)
 }
 
+func (h *Handler) BuildCenterRun(w http.ResponseWriter, r *http.Request) {
+	resp, err := h.service.BuildCenterRun(r.Context(), chi.URLParam(r, "run_id"))
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) || errors.Is(err, errBuildCenterStoreUnavailable) {
+			httpx.Error(w, r, http.StatusNotFound, "build_center.run_not_found", "构建运行不存在", nil)
+			return
+		}
+		httpx.Error(w, r, http.StatusInternalServerError, "build_center.run_failed", "读取构建运行失败", map[string]any{"error": err.Error()})
+		return
+	}
+	httpx.JSON(w, http.StatusOK, resp)
+}
+
+func (h *Handler) BuildCenterRunLogs(w http.ResponseWriter, r *http.Request) {
+	resp, err := h.service.BuildCenterRunLogs(r.Context(), chi.URLParam(r, "run_id"))
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) || errors.Is(err, errBuildCenterStoreUnavailable) {
+			httpx.Error(w, r, http.StatusNotFound, "build_center.run_not_found", "构建运行不存在", nil)
+			return
+		}
+		httpx.Error(w, r, http.StatusInternalServerError, "build_center.run_logs_failed", "读取构建日志失败", map[string]any{"error": err.Error()})
+		return
+	}
+	httpx.JSON(w, http.StatusOK, resp)
+}
+
 func (h *Handler) CreateBuildCenterRun(w http.ResponseWriter, r *http.Request) {
 	var req BuildCenterRunRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {

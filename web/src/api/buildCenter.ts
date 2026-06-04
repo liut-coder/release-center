@@ -116,6 +116,14 @@ export interface BuildCenterRunArtifact {
   updated_at?: string;
 }
 
+export interface BuildCenterRunLogs {
+  run_id: string;
+  log_path?: string;
+  lines: string[];
+  truncated?: boolean;
+  message_zh?: string;
+}
+
 export interface DeploymentTarget {
   id: string;
   project_id: string;
@@ -152,6 +160,14 @@ export function getBuildCenterOverview() {
 
 export function getBuildCenterProject(projectKey: string) {
   return apiRequest<BuildCenterProject>(`/admin/api/build-center/projects/${encodeURIComponent(projectKey)}`);
+}
+
+export function getBuildCenterRun(runId: string) {
+  return apiRequest<{ run: BuildCenterRun }>(`/admin/api/build-center/runs/${encodeURIComponent(runId)}`);
+}
+
+export function getBuildCenterRunLogs(runId: string) {
+  return apiRequest<BuildCenterRunLogs>(`/admin/api/build-center/runs/${encodeURIComponent(runId)}/logs`);
 }
 
 export function getDeploymentTargets() {

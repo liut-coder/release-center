@@ -25,6 +25,14 @@ type BuildCenterRunResponse struct {
 	Run BuildCenterRunAdmin `json:"run"`
 }
 
+type BuildCenterRunLogsResponse struct {
+	RunID     string   `json:"run_id"`
+	LogPath   string   `json:"log_path,omitempty"`
+	Lines     []string `json:"lines"`
+	Truncated bool     `json:"truncated"`
+	MessageZh string   `json:"message_zh"`
+}
+
 type BuildCenterProject struct {
 	ID                string                  `json:"id"`
 	ProjectKey        string                  `json:"project_key"`

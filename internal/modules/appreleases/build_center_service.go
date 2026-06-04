@@ -17,6 +17,7 @@ var errBuildCenterStoreUnavailable = errors.New("build center store unavailable"
 type BuildCenterStore interface {
 	BuildCenterOverview(ctx context.Context) (BuildCenterOverview, error)
 	BuildCenterProject(ctx context.Context, projectKey string) (BuildCenterProject, error)
+	BuildCenterRun(ctx context.Context, runID string) (BuildCenterRunAdmin, error)
 	DeploymentTargets(ctx context.Context) ([]DeploymentTargetAdmin, error)
 }
 
@@ -50,6 +51,8 @@ type buildctlStatusArtifact struct {
 	SHA256    string `json:"sha256"`
 }
 
+const buildCenterLogTailLimit = 200
+
 func (s *Service) BuildCenterOverview(ctx context.Context) (BuildCenterOverview, error) {
 	store, ok := s.store.(BuildCenterStore)
 	if !ok {
@@ -69,6 +72,56 @@ func (s *Service) BuildCenterProject(ctx context.Context, projectKey string) (Bu
 		return BuildCenterProject{}, errBuildCenterStoreUnavailable
 	}
 	return store.BuildCenterProject(ctx, projectKey)
+}
+
+func (s *Service) BuildCenterRun(ctx context.Context, runID string) (BuildCenterRunResponse, error) {
+	store, ok := s.store.(BuildCenterStore)
+	if !ok {
+		return BuildCenterRunResponse{}, errBuildCenterStoreUnavailable
+	}
+	run, err := store.BuildCenterRun(ctx, runID)
+	if err != nil {
+		return BuildCenterRunResponse{}, err
+	}
+	return BuildCenterRunResponse{Run: run}, nil
+}
+
+func (s *Service) BuildCenterRunLogs(ctx context.Context, runID string) (BuildCenterRunLogsResponse, error) {
+	store, ok := s.store.(BuildCenterStore)
+	if !ok {
+		return BuildCenterRunLogsResponse{}, errBuildCenterStoreUnavailable
+	}
+	run, err := store.BuildCenterRun(ctx, runID)
+	if err != nil {
+		return BuildCenterRunLogsResponse{}, err
+	}
+	if strings.TrimSpace(run.LogDir) == "" {
+		return BuildCenterRunLogsResponse{
+			RunID:     run.ID,
+			Lines:     []string{},
+			MessageZh: "构建日志尚未生成",
+		}, nil
+	}
+	logPath := filepath.Join(run.LogDir, "buildctl.log")
+	lines, truncated, err := tailLogLines(logPath, buildCenterLogTailLimit)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return BuildCenterRunLogsResponse{
+				RunID:     run.ID,
+				LogPath:   logPath,
+				Lines:     []string{},
+				MessageZh: "构建日志文件不存在",
+			}, nil
+		}
+		return BuildCenterRunLogsResponse{}, err
+	}
+	return BuildCenterRunLogsResponse{
+		RunID:     run.ID,
+		LogPath:   logPath,
+		Lines:     lines,
+		Truncated: truncated,
+		MessageZh: "构建日志已读取",
+	}, nil
 }
 
 func (s *Service) DeploymentTargets(ctx context.Context) ([]DeploymentTargetAdmin, error) {
@@ -259,6 +312,25 @@ func uploadStatusForAction(action, status string) string {
 	default:
 		return "pending"
 	}
+}
+
+func tailLogLines(path string, limit int) ([]string, bool, error) {
+	data, err := os.ReadFile(filepath.Clean(path))
+	if err != nil {
+		return nil, false, err
+	}
+	text := strings.TrimRight(string(data), "\n")
+	if text == "" {
+		return []string{}, false, nil
+	}
+	lines := strings.Split(text, "\n")
+	for i := range lines {
+		lines[i] = strings.TrimRight(lines[i], "\r")
+	}
+	if limit <= 0 || len(lines) <= limit {
+		return lines, false, nil
+	}
+	return lines[len(lines)-limit:], true, nil
 }
 
 func envString(key, fallback string) string {

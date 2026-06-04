@@ -1,8 +1,10 @@
-import { useMemo, useState } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { CheckCircle2, Cloud, GitBranch, Hammer, Loader2, Package, Play, RefreshCw, Server, XCircle } from "lucide-react";
 import {
   createBuildCenterRun,
+  getBuildCenterRun,
+  getBuildCenterRunLogs,
   getBuildCenterOverview,
   type BuildCenterOverview,
   type BuildCenterProject,
@@ -32,6 +34,7 @@ export function BuildCenterPage() {
   const [action, setAction] = useState<(typeof actionOptions)[number]>("all");
   const [message, setMessage] = useState("");
   const [messageTone, setMessageTone] = useState<"default" | "success" | "warning" | "danger">("default");
+  const [selectedRunId, setSelectedRunId] = useState("");
 
   const overviewQuery = useQuery({
     queryKey: ["build-center-overview"],
@@ -43,7 +46,26 @@ export function BuildCenterPage() {
   const deploymentTargets = overview.deployment_targets ?? [];
   const profileRows = useMemo(() => projectProfileRows(projects), [projects]);
   const recentRuns = useMemo(() => sortRuns(projects.flatMap((project) => project.recent_runs ?? [])).slice(0, 12), [projects]);
+  const selectedRunFallback = useMemo(() => recentRuns.find((run) => run.id === selectedRunId), [recentRuns, selectedRunId]);
   const metrics = useMemo(() => buildMetrics(projects, deploymentTargets), [deploymentTargets, projects]);
+  const selectedRunQuery = useQuery({
+    queryKey: ["build-center-run", selectedRunId],
+    queryFn: () => getBuildCenterRun(selectedRunId),
+    enabled: Boolean(selectedRunId),
+    refetchInterval: (query) => {
+      const run = query.state.data?.run ?? selectedRunFallback;
+      return run && runningStatuses.has(run.status) ? 5_000 : false;
+    },
+  });
+  const selectedLogsQuery = useQuery({
+    queryKey: ["build-center-run-logs", selectedRunId],
+    queryFn: () => getBuildCenterRunLogs(selectedRunId),
+    enabled: Boolean(selectedRunId),
+    refetchInterval: () => {
+      const run = selectedRunQuery.data?.run ?? selectedRunFallback;
+      return run && runningStatuses.has(run.status) ? 5_000 : false;
+    },
+  });
 
   const runMutation = useMutation({
     mutationFn: ({ project, profile }: { project: BuildCenterProject; profile: BuildProfile }) =>
@@ -59,6 +81,7 @@ export function BuildCenterPage() {
     onSuccess: async (result) => {
       setMessage(`运行已创建：${shortId(result.run.id)} / ${result.run.status}`);
       setMessageTone("success");
+      setSelectedRunId(result.run.id);
       await overviewQuery.refetch();
     },
     onError: (error) => {
@@ -188,13 +211,14 @@ export function BuildCenterPage() {
                 <Th className="w-[14%]">动作</Th>
                 <Th className="w-[20%]">版本</Th>
                 <Th className="w-[12%]">产物</Th>
-                <Th className="w-[11%]">耗时</Th>
-                <Th className="w-[12%]">时间</Th>
+                <Th className="w-[10%]">耗时</Th>
+                <Th className="w-[11%]">时间</Th>
+                <Th className="w-[8%] text-right">操作</Th>
               </tr>
             </thead>
             <tbody>
               {recentRuns.map((run) => (
-                <tr key={run.id}>
+                <tr key={run.id} className={cn(selectedRunId === run.id && "bg-muted/40")}>
                   <Td>
                     <div className="truncate font-mono text-[11px]">{shortId(run.id)}</div>
                     <div className="truncate text-[11px] text-muted-foreground">{projectName(projects, run.project_id)}</div>
@@ -210,22 +234,41 @@ export function BuildCenterPage() {
                   <Td>{run.artifacts?.length ?? 0}</Td>
                   <Td>{formatDuration(run.duration_ms)}</Td>
                   <Td>{formatDateTime(run.created_at).slice(5)}</Td>
+                  <Td className="text-right">
+                    <Button variant="secondary" size="sm" onClick={() => setSelectedRunId(run.id)}>
+                      查看
+                    </Button>
+                  </Td>
                 </tr>
               ))}
-              {recentRuns.length === 0 ? <EmptyTableRow colSpan={7} label={overviewQuery.isLoading ? "正在读取运行记录" : "暂无运行记录"} /> : null}
+              {recentRuns.length === 0 ? <EmptyTableRow colSpan={8} label={overviewQuery.isLoading ? "正在读取运行记录" : "暂无运行记录"} /> : null}
             </tbody>
           </Table>
         </Card>
 
-        <Card>
-          <SectionTitle title="部署目标" badge={`${deploymentTargets.length} 个`} />
-          <div className="grid gap-2">
-            {deploymentTargets.map((target) => (
-              <DeploymentTargetItem key={target.id} target={target} />
-            ))}
-            {deploymentTargets.length === 0 ? <EmptyBlock label={overviewQuery.isLoading ? "正在读取部署目标" : "暂无部署目标"} /> : null}
-          </div>
-        </Card>
+        <div className="grid gap-4">
+          <RunDetailPanel
+            run={selectedRunQuery.data?.run ?? selectedRunFallback}
+            logs={selectedLogsQuery.data?.lines ?? []}
+            logsLoading={selectedLogsQuery.isFetching}
+            logsTruncated={Boolean(selectedLogsQuery.data?.truncated)}
+            error={selectedRunQuery.error ?? selectedLogsQuery.error}
+            onRefresh={() => {
+              if (!selectedRunId) return;
+              selectedRunQuery.refetch();
+              selectedLogsQuery.refetch();
+            }}
+          />
+          <Card>
+            <SectionTitle title="部署目标" badge={`${deploymentTargets.length} 个`} />
+            <div className="grid gap-2">
+              {deploymentTargets.map((target) => (
+                <DeploymentTargetItem key={target.id} target={target} />
+              ))}
+              {deploymentTargets.length === 0 ? <EmptyBlock label={overviewQuery.isLoading ? "正在读取部署目标" : "暂无部署目标"} /> : null}
+            </div>
+          </Card>
+        </div>
       </div>
     </>
   );
@@ -344,11 +387,91 @@ function DeploymentTargetItem({ target }: { target: DeploymentTarget }) {
   );
 }
 
-function InfoRow({ label, value }: { label: string; value: string }) {
+function RunDetailPanel({
+  run,
+  logs,
+  logsLoading,
+  logsTruncated,
+  error,
+  onRefresh,
+}: {
+  run?: BuildCenterRun;
+  logs: string[];
+  logsLoading: boolean;
+  logsTruncated: boolean;
+  error: unknown;
+  onRefresh: () => void;
+}) {
+  const artifacts = run?.artifacts ?? [];
+  const logText = logs.join("\n");
+  return (
+    <Card>
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <div className="font-medium">运行详情</div>
+        <div className="flex items-center gap-2">
+          <Badge>{run ? shortId(run.id) : "未选择"}</Badge>
+          <Button variant="secondary" size="sm" disabled={!run || logsLoading} onClick={onRefresh}>
+            <RefreshCw className={cn("mr-1.5 h-3.5 w-3.5", logsLoading && "animate-spin")} />
+            刷新
+          </Button>
+        </div>
+      </div>
+      {!run ? <EmptyBlock label="选择一条运行查看日志和产物" /> : null}
+      {run ? (
+        <div className="grid gap-3">
+          {error ? <InlineError error={error} /> : null}
+          <div className="grid gap-2 text-xs">
+            <InfoRow label="Status" value={<RunStatusBadge status={run.status} />} />
+            <InfoRow label="Action" value={actionLabel(run.action)} />
+            <InfoRow label="Ref" value={run.git_commit || run.git_ref || "-"} />
+            <InfoRow label="Version" value={`${run.version_name || "-"} / ${run.version_code || 0}`} />
+            <InfoRow label="Duration" value={formatDuration(run.duration_ms)} />
+            <InfoRow label="Upload" value={run.upload_status || "-"} />
+            {run.error_message ? <InfoRow label="Error" value={run.error_message} /> : null}
+          </div>
+          <div>
+            <div className="mb-2 flex items-center justify-between gap-3 text-xs">
+              <span className="font-medium">产物</span>
+              <Badge>{artifacts.length}</Badge>
+            </div>
+            <div className="grid gap-1.5">
+              {artifacts.map((artifact) => (
+                <div key={artifact.id} className="rounded-lg border px-2.5 py-2 text-xs">
+                  <div className="truncate font-medium">{artifact.name || artifact.file_name}</div>
+                  <div className="mt-1 flex flex-wrap gap-2 text-[11px] text-muted-foreground">
+                    <span>{artifact.artifact_type}</span>
+                    <span>{formatSize(artifact.size_bytes)}</span>
+                    <span className="font-mono">{artifact.sha256 ? artifact.sha256.slice(0, 12) : "-"}</span>
+                  </div>
+                </div>
+              ))}
+              {artifacts.length === 0 ? <EmptyBlock label="暂无产物" /> : null}
+            </div>
+          </div>
+          <div>
+            <div className="mb-2 flex items-center justify-between gap-3 text-xs">
+              <span className="font-medium">日志</span>
+              <Badge>{logsTruncated ? "Tail" : `${logs.length} 行`}</Badge>
+            </div>
+            <pre className="max-h-72 min-h-28 overflow-auto rounded-lg bg-zinc-950 p-3 font-mono text-[11px] leading-5 text-zinc-100">
+              {logText || (logsLoading ? "正在读取日志" : "暂无日志")}
+            </pre>
+          </div>
+        </div>
+      ) : null}
+    </Card>
+  );
+}
+
+function InlineError({ error }: { error: unknown }) {
+  return <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">{error instanceof Error ? error.message : "请求失败"}</div>;
+}
+
+function InfoRow({ label, value }: { label: string; value: ReactNode }) {
   return (
     <div className="grid grid-cols-[76px_minmax(0,1fr)] gap-2">
       <span className="text-muted-foreground">{label}</span>
-      <span className="truncate font-mono">{value}</span>
+      <span className="min-w-0 truncate font-mono">{value}</span>
     </div>
   );
 }
@@ -434,6 +557,14 @@ function formatDuration(durationMs?: number) {
   const seconds = Math.round(durationMs / 1000);
   if (seconds < 60) return `${seconds}s`;
   return `${Math.floor(seconds / 60)}m ${seconds % 60}s`;
+}
+
+function formatSize(bytes?: number) {
+  if (!bytes || bytes <= 0) return "-";
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  if (bytes < 1024 * 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+  return `${(bytes / 1024 / 1024 / 1024).toFixed(1)} GB`;
 }
 
 function actionLabel(action?: string) {

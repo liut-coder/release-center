@@ -37,6 +37,40 @@ func (s *PostgresStore) BuildCenterProject(ctx context.Context, projectKey strin
 	return projects[0], nil
 }
 
+func (s *PostgresStore) BuildCenterRun(ctx context.Context, runID string) (BuildCenterRunAdmin, error) {
+	var run BuildCenterRunAdmin
+	var metadata []byte
+	err := s.db.QueryRow(ctx, `
+		select id::text, project_id::text, coalesce(build_profile_id::text, ''),
+		       coalesce(app_build_id::text, ''), trigger_type, trigger_source, action,
+		       git_ref, git_commit, version_name, version_code, build_number, channel,
+		       status, coalesce(exit_code, 0), started_by,
+		       coalesce(started_at, '0001-01-01 00:00:00+00'::timestamptz),
+		       coalesce(finished_at, '0001-01-01 00:00:00+00'::timestamptz),
+		       duration_ms, workspace_dir, artifact_dir, log_dir, manifest_path,
+		       upload_status, error_message, metadata, created_at, updated_at
+		from build_center_runs
+		where tenant_id = 'default' and id = $1::uuid
+	`, runID).Scan(
+		&run.ID, &run.ProjectID, &run.BuildProfileID,
+		&run.AppBuildID, &run.TriggerType, &run.TriggerSource, &run.Action,
+		&run.GitRef, &run.GitCommit, &run.VersionName, &run.VersionCode,
+		&run.BuildNumber, &run.Channel, &run.Status, &run.ExitCode, &run.StartedBy,
+		&run.StartedAt, &run.FinishedAt, &run.DurationMS, &run.WorkspaceDir,
+		&run.ArtifactDir, &run.LogDir, &run.ManifestPath, &run.UploadStatus,
+		&run.ErrorMessage, &metadata, &run.CreatedAt, &run.UpdatedAt,
+	)
+	if err != nil {
+		return BuildCenterRunAdmin{}, err
+	}
+	run.Metadata = rawJSON(metadata, "{}")
+	runs := []BuildCenterRunAdmin{run}
+	if err := s.attachBuildCenterRunArtifacts(ctx, runs, map[string]int{run.ID: 0}); err != nil {
+		return BuildCenterRunAdmin{}, err
+	}
+	return runs[0], nil
+}
+
 func (s *PostgresStore) DeploymentTargets(ctx context.Context) ([]DeploymentTargetAdmin, error) {
 	rows, err := s.db.Query(ctx, `
 		select id::text, project_id::text, coalesce(app_id::text, ''),
