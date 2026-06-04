@@ -305,7 +305,7 @@ credential_ref=cf_token_release_prod
 - `POST /admin/api/deployments` 可按 project + target 创建部署记录，支持 dry-run。
 - Cloudflare Pages/Workers/R2 目标会生成 wrangler 准备命令写入部署记录 metadata，等待凭证和执行器接入。
 - 支持 `/complete` 和 `/fail` 回填外部部署状态、URL、日志和错误信息。
-- Admin 前端新增部署中心，支持部署目标维护、Cloudflare Pages/Worker/R2 dry-run 部署记录、prepared command 展示和状态回填。
+- Admin 前端新增部署中心，支持部署目标维护、从制品中心选择制品创建 Cloudflare Pages/Worker/R2 dry-run 部署记录、prepared command 展示和状态回填。
 
 ## 7. 全流程闭环
 

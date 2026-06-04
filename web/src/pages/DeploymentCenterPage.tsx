@@ -1,7 +1,8 @@
 import { useMemo, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { CheckCircle2, Cloud, History, Play, RefreshCw, Server, TerminalSquare, XCircle } from "lucide-react";
-import { getBuildCenterOverview, type BuildCenterProject } from "@/api/buildCenter";
+import { getArtifactCenterOverview, type ArtifactCenterItem } from "@/api/artifacts";
+import { getBuildCenterOverview } from "@/api/buildCenter";
 import {
   completeDeployment,
   createDeployment,
@@ -55,6 +56,11 @@ export function DeploymentCenterPage() {
   const [deployGitCommit, setDeployGitCommit] = useState("");
   const [artifactPath, setArtifactPath] = useState("dist");
   const [objectKey, setObjectKey] = useState("");
+  const [artifactRef, setArtifactRef] = useState("");
+  const [selectedArtifactId, setSelectedArtifactId] = useState("");
+  const [artifactRunId, setArtifactRunId] = useState("");
+  const [artifactAppBuildId, setArtifactAppBuildId] = useState("");
+  const [artifactAppBuildArtifactId, setArtifactAppBuildArtifactId] = useState("");
   const [deploymentURL, setDeploymentURL] = useState("");
   const [filter, setFilter] = useState("全部");
   const [message, setMessage] = useState("部署中心已就绪。");
@@ -73,10 +79,15 @@ export function DeploymentCenterPage() {
     queryFn: getDeployments,
     refetchInterval: (query) => (hasActiveDeployments(query.state.data?.deployment_records ?? []) ? 5_000 : false),
   });
+  const artifactsQuery = useQuery({
+    queryKey: ["deployment-center-artifacts"],
+    queryFn: getArtifactCenterOverview,
+  });
 
   const projects = projectsQuery.data?.projects ?? [];
   const targets = targetsQuery.data?.deployment_targets ?? [];
   const records = recordsQuery.data?.deployment_records ?? [];
+  const artifacts = artifactsQuery.data?.artifacts ?? [];
   const projectKeys = useMemo(() => unique(["release-center", ...projects.map((project) => project.project_key)]), [projects]);
   const selectedTarget = useMemo(
     () => targets.find((target) => target.id === selectedTargetId) ?? targets[0],
@@ -123,6 +134,9 @@ export function DeploymentCenterPage() {
       if (deploymentValidation || !selectedTarget) throw new Error(deploymentValidation || "请选择部署目标");
       return createDeployment({
         target_id: selectedTarget.id,
+        run_id: artifactRunId.trim(),
+        app_build_id: artifactAppBuildId.trim(),
+        app_build_artifact_id: artifactAppBuildArtifactId.trim(),
         version_name: deployVersion.trim(),
         build_number: Number(deployBuildNumber),
         git_commit: deployGitCommit.trim(),
@@ -133,6 +147,8 @@ export function DeploymentCenterPage() {
           source: "admin_web",
           artifact_path: artifactPath.trim(),
           object_key: objectKey.trim(),
+          immutable_ref: artifactRef.trim(),
+          artifact_center_id: selectedArtifactId || undefined,
           target_key: selectedTarget.target_key,
         },
       });
@@ -180,6 +196,27 @@ export function DeploymentCenterPage() {
   const mutationError = createTargetMutation.error || createDeploymentMutation.error || completeMutation.error || failMutation.error;
   const busy = createTargetMutation.isPending || createDeploymentMutation.isPending || completeMutation.isPending || failMutation.isPending;
 
+  function applyArtifact(artifact?: ArtifactCenterItem) {
+    if (!artifact) {
+      setSelectedArtifactId("");
+      setArtifactRunId("");
+      setArtifactAppBuildId("");
+      setArtifactAppBuildArtifactId("");
+      setArtifactRef("");
+      return;
+    }
+    setSelectedArtifactId(artifact.id);
+    setArtifactRunId(artifact.run_id || "");
+    setArtifactAppBuildId(artifact.build_id || "");
+    setArtifactAppBuildArtifactId(artifact.app_build_artifact_id || "");
+    setArtifactRef(artifact.immutable_ref || `${artifact.source}:${artifact.id}`);
+    setArtifactPath(firstNonEmpty(artifact.location, artifact.file_name, artifact.name, artifactPath));
+    setObjectKey(firstNonEmpty(artifact.file_name, artifact.name, objectKey));
+    if (artifact.version_name) setDeployVersion(artifact.version_name);
+    if (artifact.build_number) setDeployBuildNumber(String(artifact.build_number));
+    if (artifact.git_commit) setDeployGitCommit(artifact.git_commit);
+  }
+
   return (
     <>
       <PageHeader title="部署中心">
@@ -189,8 +226,9 @@ export function DeploymentCenterPage() {
             projectsQuery.refetch();
             targetsQuery.refetch();
             recordsQuery.refetch();
+            artifactsQuery.refetch();
           }}
-          disabled={projectsQuery.isFetching || targetsQuery.isFetching || recordsQuery.isFetching}
+          disabled={projectsQuery.isFetching || targetsQuery.isFetching || recordsQuery.isFetching || artifactsQuery.isFetching}
         >
           <RefreshCw className="mr-2 h-4 w-4" />
           刷新
@@ -200,6 +238,7 @@ export function DeploymentCenterPage() {
       {projectsQuery.isError ? <ApiErrorState error={projectsQuery.error} title="项目列表读取失败" /> : null}
       {targetsQuery.isError ? <ApiErrorState error={targetsQuery.error} title="部署目标读取失败" /> : null}
       {recordsQuery.isError ? <ApiErrorState error={recordsQuery.error} title="部署记录读取失败" /> : null}
+      {artifactsQuery.isError ? <ApiErrorState error={artifactsQuery.error} title="制品中心读取失败" /> : null}
       {mutationError ? <ApiErrorState error={mutationError} title="部署操作失败" /> : null}
 
       <div className="mb-4">
@@ -263,6 +302,18 @@ export function DeploymentCenterPage() {
                 placeholder="暂无部署目标"
               />
               {selectedTarget ? <TargetPreview target={selectedTarget} /> : <EmptyBox text="暂无部署目标" />}
+              <Select
+                label="制品"
+                value={selectedArtifactId}
+                onChange={(value) => applyArtifact(artifacts.find((artifact) => artifact.id === value))}
+                options={[
+                  { value: "", label: artifactsQuery.isLoading ? "正在读取制品" : "手动填写" },
+                  ...artifacts.slice(0, 80).map((artifact) => ({
+                    value: artifact.id,
+                    label: artifactOptionLabel(artifact),
+                  })),
+                ]}
+              />
               <div className="grid grid-cols-[minmax(0,1fr)_100px] gap-2">
                 <Input placeholder="version" value={deployVersion} onChange={(event) => setDeployVersion(event.target.value)} />
                 <Input placeholder="build" type="number" value={deployBuildNumber} onChange={(event) => setDeployBuildNumber(event.target.value)} />
@@ -270,6 +321,14 @@ export function DeploymentCenterPage() {
               <Input placeholder="git commit / tag" value={deployGitCommit} onChange={(event) => setDeployGitCommit(event.target.value)} />
               <Input placeholder="artifact path" value={artifactPath} onChange={(event) => setArtifactPath(event.target.value)} />
               <Input placeholder="object key / R2 key" value={objectKey} onChange={(event) => setObjectKey(event.target.value)} />
+              <Input placeholder="immutable ref" value={artifactRef} onChange={(event) => setArtifactRef(event.target.value)} />
+              {selectedArtifactId ? (
+                <div className="grid gap-1 rounded-md border bg-muted p-2 font-mono text-[11px] text-muted-foreground">
+                  <span>run={artifactRunId || "-"}</span>
+                  <span>build={artifactAppBuildId || "-"}</span>
+                  <span>artifact={artifactAppBuildArtifactId || "-"}</span>
+                </div>
+              ) : null}
               <Input placeholder="deployment url" value={deploymentURL} onChange={(event) => setDeploymentURL(event.target.value)} />
               {deploymentValidation ? <InlineWarning text={deploymentValidation} /> : null}
               <Button onClick={() => createDeploymentMutation.mutate()} disabled={Boolean(deploymentValidation) || createDeploymentMutation.isPending}>
@@ -585,6 +644,16 @@ function preparedCommandFromTarget(target: DeploymentTarget) {
 
 function providerLabel(provider?: string) {
   return providerOptions.find((item) => item.value === provider)?.label ?? provider ?? "-";
+}
+
+function artifactOptionLabel(artifact: ArtifactCenterItem) {
+  const scope = artifact.project_key || artifact.app_key || artifact.source;
+  const version = artifact.version_name ? `${artifact.version_name}${artifact.build_number ? ` #${artifact.build_number}` : ""}` : artifact.artifact_type;
+  return `${scope} / ${artifact.name || artifact.file_name || artifact.id.slice(0, 8)} / ${version}`;
+}
+
+function firstNonEmpty(...values: Array<string | undefined>) {
+  return values.find((value) => value && value.trim())?.trim() ?? "";
 }
 
 function deploymentStatusTone(status?: DeploymentStatus): "default" | "success" | "warning" | "danger" {
