@@ -110,6 +110,23 @@ func TestRoutesWithOptionsProtectsCIEndpoints(t *testing.T) {
 	}
 }
 
+func TestRoutesWithOptionsProtectsWorkerEndpoints(t *testing.T) {
+	handler := NewHandler(NewService(Config{}))
+	routes := handler.RoutesWithOptions(RouteOptions{
+		CIMiddleware: []func(http.Handler) http.Handler{
+			BearerTokenMiddleware("secret"),
+		},
+	})
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/workers/register", strings.NewReader(`{}`))
+	routes.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("expected worker endpoint to require token, got %d", rec.Code)
+	}
+}
+
 func TestRoutesExposeBuildDownloadEndpoints(t *testing.T) {
 	handler := NewHandler(NewService(Config{}))
 	routes := handler.Routes()

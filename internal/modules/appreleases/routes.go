@@ -97,6 +97,17 @@ func (h *Handler) RoutesWithOptions(opts RouteOptions) chi.Router {
 	})
 
 	r.Group(func(r chi.Router) {
+		useAll(r, opts.CIMiddleware)
+		r.Post("/api/v1/workers/register", h.RegisterWorker)
+		r.Post("/api/v1/workers/heartbeat", h.WorkerHeartbeat)
+		r.Get("/api/v1/workers/tasks/next", h.NextWorkerTask)
+		r.Post("/api/v1/workers/tasks/{task_id}/logs", h.AppendWorkerTaskLogs)
+		r.Post("/api/v1/workers/tasks/{task_id}/artifacts", h.SaveWorkerTaskArtifacts)
+		r.Post("/api/v1/workers/tasks/{task_id}/complete", h.CompleteWorkerTask)
+		r.Post("/api/v1/workers/tasks/{task_id}/fail", h.FailWorkerTask)
+	})
+
+	r.Group(func(r chi.Router) {
 		useAll(r, opts.WebhookMiddleware)
 		r.Post("/api/v1/webhooks/github", h.Webhook("github"))
 		r.Post("/api/v1/webhooks/gitea", h.Webhook("gitea"))

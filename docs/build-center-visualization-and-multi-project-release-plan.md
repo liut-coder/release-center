@@ -201,6 +201,13 @@ POST /api/v1/workers/tasks/{task_id}/complete
 POST /api/v1/workers/tasks/{task_id}/fail
 ```
 
+当前已落地：
+
+- 第 6 号 migration 新增 `build_workers`、`worker_heartbeats`、`worker_tasks`。
+- Worker API 使用和 CI API 相同的机器 Bearer Token 保护。
+- 已支持 worker 注册、心跳、领取匹配标签的 queued task、日志 tail、产物 manifest、complete/fail 状态回传。
+- `worker_tasks.required_labels` 使用标签子集匹配，支持 Linux/Windows/Android/Docker/Cloudflare 等构建能力调度。
+
 worker 通过标签匹配任务：
 
 ```text
