@@ -58,6 +58,62 @@ func (h *Handler) BuildCenterRunLogs(w http.ResponseWriter, r *http.Request) {
 	httpx.JSON(w, http.StatusOK, resp)
 }
 
+func (h *Handler) CreateBuildCenterProject(w http.ResponseWriter, r *http.Request) {
+	var req BuildCenterProjectRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		httpx.Error(w, r, http.StatusBadRequest, "request.invalid_json", "请求 JSON 格式不正确", nil)
+		return
+	}
+	resp, err := h.service.CreateBuildCenterProject(r.Context(), req)
+	if err != nil {
+		buildCenterConfigAPIError(w, r, err, "build_center.project_save_failed", "保存构建项目失败")
+		return
+	}
+	httpx.JSON(w, http.StatusOK, resp)
+}
+
+func (h *Handler) UpsertCodeRepository(w http.ResponseWriter, r *http.Request) {
+	var req CodeRepositoryRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		httpx.Error(w, r, http.StatusBadRequest, "request.invalid_json", "请求 JSON 格式不正确", nil)
+		return
+	}
+	resp, err := h.service.UpsertCodeRepository(r.Context(), chi.URLParam(r, "project_key"), req)
+	if err != nil {
+		buildCenterConfigAPIError(w, r, err, "build_center.repository_save_failed", "保存代码仓库失败")
+		return
+	}
+	httpx.JSON(w, http.StatusOK, resp)
+}
+
+func (h *Handler) UpsertBuildProfile(w http.ResponseWriter, r *http.Request) {
+	var req BuildProfileRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		httpx.Error(w, r, http.StatusBadRequest, "request.invalid_json", "请求 JSON 格式不正确", nil)
+		return
+	}
+	resp, err := h.service.UpsertBuildProfile(r.Context(), chi.URLParam(r, "project_key"), req)
+	if err != nil {
+		buildCenterConfigAPIError(w, r, err, "build_center.profile_save_failed", "保存构建配置失败")
+		return
+	}
+	httpx.JSON(w, http.StatusOK, resp)
+}
+
+func (h *Handler) UpsertWebhookRoute(w http.ResponseWriter, r *http.Request) {
+	var req WebhookRouteRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		httpx.Error(w, r, http.StatusBadRequest, "request.invalid_json", "请求 JSON 格式不正确", nil)
+		return
+	}
+	resp, err := h.service.UpsertWebhookRoute(r.Context(), chi.URLParam(r, "project_key"), req)
+	if err != nil {
+		buildCenterConfigAPIError(w, r, err, "build_center.webhook_route_save_failed", "保存 Webhook 路由失败")
+		return
+	}
+	httpx.JSON(w, http.StatusOK, resp)
+}
+
 func (h *Handler) CreateBuildCenterRun(w http.ResponseWriter, r *http.Request) {
 	var req BuildCenterRunRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -74,6 +130,18 @@ func (h *Handler) CreateBuildCenterRun(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	httpx.JSON(w, http.StatusAccepted, resp)
+}
+
+func buildCenterConfigAPIError(w http.ResponseWriter, r *http.Request, err error, code, message string) {
+	if errors.Is(err, errBuildCenterStoreUnavailable) {
+		httpx.Error(w, r, http.StatusServiceUnavailable, code, message, map[string]any{"error": err.Error()})
+		return
+	}
+	if errors.Is(err, pgx.ErrNoRows) {
+		httpx.Error(w, r, http.StatusNotFound, code, message, map[string]any{"error": err.Error()})
+		return
+	}
+	httpx.Error(w, r, http.StatusBadRequest, code, message, map[string]any{"error": err.Error()})
 }
 
 func (h *Handler) DeploymentTargets(w http.ResponseWriter, r *http.Request) {

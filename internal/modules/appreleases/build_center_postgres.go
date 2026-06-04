@@ -102,6 +102,187 @@ func (s *PostgresStore) DeploymentTargets(ctx context.Context) ([]DeploymentTarg
 	return targets, rows.Err()
 }
 
+func (s *PostgresStore) CreateBuildCenterProject(ctx context.Context, req BuildCenterProjectRequest) (BuildCenterProject, error) {
+	_, err := s.db.Exec(ctx, `
+		insert into release_projects (
+		  tenant_id, project_key, name, description, owner_account,
+		  lifecycle_status, default_channel, metadata
+		)
+		values ('default', $1, $2, $3, $4, $5, $6, $7)
+		on conflict (tenant_id, project_key) do update
+		set name = excluded.name,
+		    description = excluded.description,
+		    owner_account = excluded.owner_account,
+		    lifecycle_status = excluded.lifecycle_status,
+		    default_channel = excluded.default_channel,
+		    metadata = release_projects.metadata || excluded.metadata,
+		    updated_at = now()
+	`, req.ProjectKey, req.Name, req.Description, req.OwnerAccount,
+		req.LifecycleStatus, req.DefaultChannel, jsonb(req.Metadata))
+	if err != nil {
+		return BuildCenterProject{}, err
+	}
+	return s.BuildCenterProject(ctx, req.ProjectKey)
+}
+
+func (s *PostgresStore) UpsertCodeRepository(ctx context.Context, projectKey string, req CodeRepositoryRequest) (CodeRepositoryAdmin, error) {
+	var item CodeRepositoryAdmin
+	var metadata []byte
+	err := s.db.QueryRow(ctx, `
+		with project_row as (
+		  select id from release_projects where tenant_id = 'default' and project_key = $1
+		)
+		insert into code_repositories (
+		  tenant_id, project_id, provider, repo_url, repo_full_name,
+		  default_ref, credential_ref, webhook_secret_ref,
+		  webhook_enabled, trigger_on_push, trigger_on_tag, metadata
+		)
+		select 'default', project_row.id, $2, $3, $4,
+		       $5, $6, $7, $8, $9, $10, $11
+		from project_row
+		on conflict (tenant_id, provider, repo_url) do update
+		set project_id = excluded.project_id,
+		    repo_full_name = excluded.repo_full_name,
+		    default_ref = excluded.default_ref,
+		    credential_ref = excluded.credential_ref,
+		    webhook_secret_ref = excluded.webhook_secret_ref,
+		    webhook_enabled = excluded.webhook_enabled,
+		    trigger_on_push = excluded.trigger_on_push,
+		    trigger_on_tag = excluded.trigger_on_tag,
+		    metadata = code_repositories.metadata || excluded.metadata,
+		    updated_at = now()
+		returning id::text, project_id::text, provider, repo_url, repo_full_name,
+		          default_ref, credential_ref, webhook_secret_ref, webhook_enabled,
+		          trigger_on_push, trigger_on_tag, metadata, created_at, updated_at
+	`, projectKey, req.Provider, req.RepoURL, req.RepoFullName,
+		req.DefaultRef, req.CredentialRef, req.WebhookSecretRef,
+		boolValue(req.WebhookEnabled, false), boolValue(req.TriggerOnPush, false),
+		boolValue(req.TriggerOnTag, false), jsonb(req.Metadata)).Scan(
+		&item.ID, &item.ProjectID, &item.Provider, &item.RepoURL,
+		&item.RepoFullName, &item.DefaultRef, &item.CredentialRef,
+		&item.WebhookSecretRef, &item.WebhookEnabled, &item.TriggerOnPush,
+		&item.TriggerOnTag, &metadata, &item.CreatedAt, &item.UpdatedAt,
+	)
+	if err != nil {
+		return CodeRepositoryAdmin{}, err
+	}
+	item.Metadata = rawJSON(metadata, "{}")
+	return item, nil
+}
+
+func (s *PostgresStore) UpsertBuildProfile(ctx context.Context, projectKey string, req BuildProfileRequest) (BuildProfileAdmin, error) {
+	enabled := boolValue(req.Enabled, true)
+	var item BuildProfileAdmin
+	var commands, artifactRules, metadata []byte
+	err := s.db.QueryRow(ctx, `
+		with project_row as (
+		  select id from release_projects where tenant_id = 'default' and project_key = $1
+		)
+		insert into build_profiles (
+		  tenant_id, project_id, app_id, profile_key, name, build_center_project,
+		  stack_type, build_type, config_path, source_workdir, default_ref,
+		  default_version_name, default_version_code, default_channel,
+		  build_action, commands, artifact_rules, enabled, metadata
+		)
+		select 'default', project_row.id, $2::uuid, $3, $4, $5,
+		       $6, $7, $8, $9, $10, $11, $12, $13,
+		       $14, $15, $16, $17, $18
+		from project_row
+		on conflict (project_id, profile_key) do update
+		set app_id = excluded.app_id,
+		    name = excluded.name,
+		    build_center_project = excluded.build_center_project,
+		    stack_type = excluded.stack_type,
+		    build_type = excluded.build_type,
+		    config_path = excluded.config_path,
+		    source_workdir = excluded.source_workdir,
+		    default_ref = excluded.default_ref,
+		    default_version_name = excluded.default_version_name,
+		    default_version_code = excluded.default_version_code,
+		    default_channel = excluded.default_channel,
+		    build_action = excluded.build_action,
+		    commands = excluded.commands,
+		    artifact_rules = excluded.artifact_rules,
+		    enabled = excluded.enabled,
+		    metadata = build_profiles.metadata || excluded.metadata,
+		    updated_at = now()
+		returning id::text, project_id::text, coalesce(app_id::text, ''),
+		          profile_key, name, build_center_project, stack_type,
+		          build_type, config_path, source_workdir, default_ref,
+		          default_version_name, default_version_code, default_channel,
+		          build_action, commands, artifact_rules, enabled,
+		          metadata, created_at, updated_at
+	`, projectKey, nullableUUID(req.AppID), req.ProfileKey, req.Name,
+		req.BuildCenterProject, req.StackType, req.BuildType, req.ConfigPath,
+		req.SourceWorkdir, req.DefaultRef, req.DefaultVersionName,
+		req.DefaultVersionCode, req.DefaultChannel, req.BuildAction,
+		jsonb(req.Commands), jsonb(req.ArtifactRules), enabled, jsonb(req.Metadata)).Scan(
+		&item.ID, &item.ProjectID, &item.AppID, &item.ProfileKey,
+		&item.Name, &item.BuildCenterProject, &item.StackType,
+		&item.BuildType, &item.ConfigPath, &item.SourceWorkdir,
+		&item.DefaultRef, &item.DefaultVersionName, &item.DefaultVersionCode,
+		&item.DefaultChannel, &item.BuildAction, &commands, &artifactRules,
+		&item.Enabled, &metadata, &item.CreatedAt, &item.UpdatedAt,
+	)
+	if err != nil {
+		return BuildProfileAdmin{}, err
+	}
+	item.Commands = rawJSON(commands, "{}")
+	item.ArtifactRules = rawJSON(artifactRules, "[]")
+	item.Metadata = rawJSON(metadata, "{}")
+	return item, nil
+}
+
+func (s *PostgresStore) UpsertWebhookRoute(ctx context.Context, projectKey string, req WebhookRouteRequest) (WebhookRouteAdmin, error) {
+	enabled := boolValue(req.Enabled, true)
+	var item WebhookRouteAdmin
+	var metadata []byte
+	err := s.db.QueryRow(ctx, `
+		with project_row as (
+		  select id from release_projects where tenant_id = 'default' and project_key = $1
+		),
+		repo_row as (
+		  select cr.id
+		  from code_repositories cr
+		  join project_row on project_row.id = cr.project_id
+		  where cr.tenant_id = 'default' and cr.id = $2::uuid
+		),
+		profile_row as (
+		  select bp.id, bp.profile_key
+		  from build_profiles bp
+		  join project_row on project_row.id = bp.project_id
+		  where bp.tenant_id = 'default' and bp.profile_key = nullif($3, '')
+		)
+		insert into webhook_routes (
+		  tenant_id, project_id, repository_id, build_profile_id,
+		  event_type, ref_pattern, action, enabled, metadata
+		)
+		select 'default', project_row.id, repo_row.id,
+		       (select id from profile_row), $4, $5, $6, $7, $8
+		from project_row, repo_row
+		on conflict (repository_id, event_type, ref_pattern, action) do update
+		set build_profile_id = excluded.build_profile_id,
+		    enabled = excluded.enabled,
+		    metadata = webhook_routes.metadata || excluded.metadata,
+		    updated_at = now()
+		returning id::text, project_id::text, repository_id::text,
+		          coalesce(build_profile_id::text, ''),
+		          coalesce((select profile_key from profile_row), ''),
+		          event_type, ref_pattern, action, enabled,
+		          metadata, created_at, updated_at
+	`, projectKey, req.RepositoryID, req.ProfileKey, req.EventType,
+		req.RefPattern, req.Action, enabled, jsonb(req.Metadata)).Scan(
+		&item.ID, &item.ProjectID, &item.RepositoryID, &item.BuildProfileID,
+		&item.ProfileKey, &item.EventType, &item.RefPattern, &item.Action,
+		&item.Enabled, &metadata, &item.CreatedAt, &item.UpdatedAt,
+	)
+	if err != nil {
+		return WebhookRouteAdmin{}, err
+	}
+	item.Metadata = rawJSON(metadata, "{}")
+	return item, nil
+}
+
 func (s *PostgresStore) CreateBuildCenterRun(ctx context.Context, projectKey string, req BuildCenterRunRequest) (BuildCenterRunAdmin, BuildProfileAdmin, error) {
 	profile, err := s.buildProfileForRun(ctx, projectKey, req.ProfileKey)
 	if err != nil {
@@ -361,6 +542,9 @@ func (s *PostgresStore) attachBuildCenterRelations(ctx context.Context, projects
 	if err := s.attachBuildProfiles(ctx, projects, index, ids); err != nil {
 		return err
 	}
+	if err := s.attachWebhookRoutes(ctx, projects, index, ids); err != nil {
+		return err
+	}
 	if err := s.attachBuildCenterRuns(ctx, projects, index, ids); err != nil {
 		return err
 	}
@@ -430,6 +614,38 @@ func (s *PostgresStore) attachBuildProfiles(ctx context.Context, projects []Buil
 		item.Metadata = rawJSON(metadata, "{}")
 		if i, ok := index[item.ProjectID]; ok {
 			projects[i].BuildProfiles = append(projects[i].BuildProfiles, item)
+		}
+	}
+	return rows.Err()
+}
+
+func (s *PostgresStore) attachWebhookRoutes(ctx context.Context, projects []BuildCenterProject, index map[string]int, ids []string) error {
+	rows, err := s.db.Query(ctx, `
+		select wr.id::text, wr.project_id::text, wr.repository_id::text,
+		       coalesce(wr.build_profile_id::text, ''),
+		       coalesce(bp.profile_key, ''), wr.event_type, wr.ref_pattern,
+		       wr.action, wr.enabled, wr.metadata, wr.created_at, wr.updated_at
+		from webhook_routes wr
+		left join build_profiles bp on bp.id = wr.build_profile_id and bp.tenant_id = wr.tenant_id
+		where wr.tenant_id = 'default' and wr.project_id::text = any($1)
+		order by wr.enabled desc, wr.event_type asc, wr.ref_pattern asc
+	`, ids)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var item WebhookRouteAdmin
+		var metadata []byte
+		if err := rows.Scan(&item.ID, &item.ProjectID, &item.RepositoryID,
+			&item.BuildProfileID, &item.ProfileKey, &item.EventType,
+			&item.RefPattern, &item.Action, &item.Enabled, &metadata,
+			&item.CreatedAt, &item.UpdatedAt); err != nil {
+			return err
+		}
+		item.Metadata = rawJSON(metadata, "{}")
+		if i, ok := index[item.ProjectID]; ok {
+			projects[i].WebhookRoutes = append(projects[i].WebhookRoutes, item)
 		}
 	}
 	return rows.Err()

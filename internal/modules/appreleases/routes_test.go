@@ -161,6 +161,23 @@ func TestRoutesWithOptionsProtectsArtifactCenterEndpoints(t *testing.T) {
 	}
 }
 
+func TestRoutesWithOptionsProtectsBuildCenterConfigEndpoints(t *testing.T) {
+	handler := NewHandler(NewService(Config{}))
+	routes := handler.RoutesWithOptions(RouteOptions{
+		AdminMiddleware: []func(http.Handler) http.Handler{
+			BearerTokenMiddleware("secret"),
+		},
+	})
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/admin/api/build-center/projects/release-center/repositories", strings.NewReader(`{}`))
+	routes.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("expected build center config endpoint to require admin token, got %d", rec.Code)
+	}
+}
+
 func TestRoutesWithOptionsProtectsDeploymentEndpoints(t *testing.T) {
 	handler := NewHandler(NewService(Config{}))
 	routes := handler.RoutesWithOptions(RouteOptions{

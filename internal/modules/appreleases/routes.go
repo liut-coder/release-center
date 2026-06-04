@@ -34,7 +34,11 @@ func (h *Handler) RoutesWithOptions(opts RouteOptions) chi.Router {
 		r.Post("/admin/api/apps/{app_id}/disable", h.AppAction("disable"))
 
 		r.Get("/admin/api/build-center/projects", h.BuildCenterProjects)
+		r.Post("/admin/api/build-center/projects", h.CreateBuildCenterProject)
 		r.Get("/admin/api/build-center/projects/{project_key}", h.BuildCenterProject)
+		r.Post("/admin/api/build-center/projects/{project_key}/repositories", h.UpsertCodeRepository)
+		r.Post("/admin/api/build-center/projects/{project_key}/profiles", h.UpsertBuildProfile)
+		r.Post("/admin/api/build-center/projects/{project_key}/webhook-routes", h.UpsertWebhookRoute)
 		r.Post("/admin/api/build-center/projects/{project_key}/runs", h.CreateBuildCenterRun)
 		r.Get("/admin/api/build-center/runs/{run_id}", h.BuildCenterRun)
 		r.Get("/admin/api/build-center/runs/{run_id}/logs", h.BuildCenterRunLogs)

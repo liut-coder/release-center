@@ -167,7 +167,11 @@ POST /admin/api/projects
 GET  /admin/api/projects/{project_key}
 
 GET  /admin/api/build-center/projects
+POST /admin/api/build-center/projects
 GET  /admin/api/build-center/projects/{project_key}
+POST /admin/api/build-center/projects/{project_key}/repositories
+POST /admin/api/build-center/projects/{project_key}/profiles
+POST /admin/api/build-center/projects/{project_key}/webhook-routes
 POST /admin/api/build-center/projects/{project_key}/runs
 GET  /admin/api/build-center/runs/{run_id}
 GET  /admin/api/build-center/runs/{run_id}/logs
@@ -271,6 +275,7 @@ GitHub Actions 仍然可作为外部 CI 使用。外部 CI 构建完成后直接
 - `/api/v1/webhooks/github` 和 `/api/v1/webhooks/gitea` 继续先写入 `webhook_events`。
 - Webhook 入库后会匹配已启用的 `code_repositories.webhook_enabled` 和 `webhook_routes.enabled`。
 - 命中 route 后创建 `build_center_runs` 并进入构建中心执行链路。
+- Admin API 已支持保存 `release_projects`、`code_repositories`、`build_profiles` 和 `webhook_routes`，用于后台接入 GitHub 仓库和构建 profile。
 - 第 5 号 migration 已预置 release-center 的 main push 和 tag route，但默认 disabled；配置 GitHub secret/认证后再开启仓库和 route。
 
 ## 6. Cloudflare 接入

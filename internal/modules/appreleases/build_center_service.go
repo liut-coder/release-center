@@ -33,6 +33,14 @@ type BuildCenterWebhookStore interface {
 	MatchWebhookBuildRoutes(ctx context.Context, event WebhookEventRequest) ([]WebhookBuildRoute, error)
 }
 
+type BuildCenterConfigStore interface {
+	BuildCenterStore
+	CreateBuildCenterProject(ctx context.Context, req BuildCenterProjectRequest) (BuildCenterProject, error)
+	UpsertCodeRepository(ctx context.Context, projectKey string, req CodeRepositoryRequest) (CodeRepositoryAdmin, error)
+	UpsertBuildProfile(ctx context.Context, projectKey string, req BuildProfileRequest) (BuildProfileAdmin, error)
+	UpsertWebhookRoute(ctx context.Context, projectKey string, req WebhookRouteRequest) (WebhookRouteAdmin, error)
+}
+
 type buildctlStatus struct {
 	BuildID     string                   `json:"build_id"`
 	Project     string                   `json:"project"`
@@ -136,6 +144,106 @@ func (s *Service) DeploymentTargets(ctx context.Context) ([]DeploymentTargetAdmi
 	return store.DeploymentTargets(ctx)
 }
 
+func (s *Service) CreateBuildCenterProject(ctx context.Context, req BuildCenterProjectRequest) (BuildCenterProjectActionResponse, error) {
+	store, ok := s.store.(BuildCenterConfigStore)
+	if !ok {
+		return BuildCenterProjectActionResponse{}, errBuildCenterStoreUnavailable
+	}
+	req.ProjectKey = strings.TrimSpace(req.ProjectKey)
+	req.Name = strings.TrimSpace(req.Name)
+	req.Description = strings.TrimSpace(req.Description)
+	req.OwnerAccount = strings.TrimSpace(req.OwnerAccount)
+	req.LifecycleStatus = normalizeProjectLifecycleStatus(req.LifecycleStatus)
+	req.DefaultChannel = normalizeChannel(req.DefaultChannel, s.cfg.Channel)
+	if req.ProjectKey == "" || req.Name == "" {
+		return BuildCenterProjectActionResponse{}, fmt.Errorf("project_key and name are required")
+	}
+	project, err := store.CreateBuildCenterProject(ctx, req)
+	if err != nil {
+		return BuildCenterProjectActionResponse{}, err
+	}
+	return BuildCenterProjectActionResponse{OK: true, Project: project, MessageZh: "构建项目已保存"}, nil
+}
+
+func (s *Service) UpsertCodeRepository(ctx context.Context, projectKey string, req CodeRepositoryRequest) (CodeRepositoryActionResponse, error) {
+	store, ok := s.store.(BuildCenterConfigStore)
+	if !ok {
+		return CodeRepositoryActionResponse{}, errBuildCenterStoreUnavailable
+	}
+	projectKey = strings.TrimSpace(projectKey)
+	req.Provider = normalizeCodeProvider(req.Provider)
+	req.RepoURL = strings.TrimSpace(req.RepoURL)
+	req.RepoFullName = strings.TrimSpace(req.RepoFullName)
+	req.DefaultRef = firstNonBlank(req.DefaultRef, "main")
+	req.CredentialRef = strings.TrimSpace(req.CredentialRef)
+	req.WebhookSecretRef = strings.TrimSpace(req.WebhookSecretRef)
+	if projectKey == "" || req.Provider == "" || req.RepoURL == "" {
+		return CodeRepositoryActionResponse{}, fmt.Errorf("project_key, provider and repo_url are required")
+	}
+	repository, err := store.UpsertCodeRepository(ctx, projectKey, req)
+	if err != nil {
+		return CodeRepositoryActionResponse{}, err
+	}
+	return CodeRepositoryActionResponse{OK: true, Repository: repository, MessageZh: "代码仓库已保存"}, nil
+}
+
+func (s *Service) UpsertBuildProfile(ctx context.Context, projectKey string, req BuildProfileRequest) (BuildProfileActionResponse, error) {
+	store, ok := s.store.(BuildCenterConfigStore)
+	if !ok {
+		return BuildProfileActionResponse{}, errBuildCenterStoreUnavailable
+	}
+	projectKey = strings.TrimSpace(projectKey)
+	req.AppID = strings.TrimSpace(req.AppID)
+	req.ProfileKey = strings.TrimSpace(req.ProfileKey)
+	req.Name = strings.TrimSpace(req.Name)
+	req.BuildCenterProject = strings.TrimSpace(req.BuildCenterProject)
+	req.StackType = firstNonBlank(req.StackType, "generic")
+	req.BuildType = firstNonBlank(req.BuildType, "release")
+	req.ConfigPath = strings.TrimSpace(req.ConfigPath)
+	req.SourceWorkdir = strings.TrimSpace(req.SourceWorkdir)
+	req.DefaultRef = firstNonBlank(req.DefaultRef, "main")
+	req.DefaultVersionName = strings.TrimSpace(req.DefaultVersionName)
+	req.DefaultChannel = normalizeChannel(req.DefaultChannel, s.cfg.Channel)
+	req.BuildAction = normalizeBuildCenterAction(req.BuildAction)
+	req.Commands = normalizeRawMessage(req.Commands, "{}")
+	req.ArtifactRules = normalizeRawMessage(req.ArtifactRules, "[]")
+	if projectKey == "" || req.ProfileKey == "" || req.Name == "" || req.BuildCenterProject == "" {
+		return BuildProfileActionResponse{}, fmt.Errorf("project_key, profile_key, name and build_center_project are required")
+	}
+	if !isAllowedBuildCenterAction(req.BuildAction) {
+		return BuildProfileActionResponse{}, fmt.Errorf("unsupported build action: %s", req.BuildAction)
+	}
+	profile, err := store.UpsertBuildProfile(ctx, projectKey, req)
+	if err != nil {
+		return BuildProfileActionResponse{}, err
+	}
+	return BuildProfileActionResponse{OK: true, BuildProfile: profile, MessageZh: "构建配置已保存"}, nil
+}
+
+func (s *Service) UpsertWebhookRoute(ctx context.Context, projectKey string, req WebhookRouteRequest) (WebhookRouteActionResponse, error) {
+	store, ok := s.store.(BuildCenterConfigStore)
+	if !ok {
+		return WebhookRouteActionResponse{}, errBuildCenterStoreUnavailable
+	}
+	projectKey = strings.TrimSpace(projectKey)
+	req.RepositoryID = strings.TrimSpace(req.RepositoryID)
+	req.ProfileKey = strings.TrimSpace(req.ProfileKey)
+	req.EventType = firstNonBlank(req.EventType, "push")
+	req.RefPattern = firstNonBlank(req.RefPattern, "*")
+	req.Action = normalizeBuildCenterAction(req.Action)
+	if projectKey == "" || req.RepositoryID == "" || req.EventType == "" {
+		return WebhookRouteActionResponse{}, fmt.Errorf("project_key, repository_id and event_type are required")
+	}
+	if !isAllowedBuildCenterAction(req.Action) {
+		return WebhookRouteActionResponse{}, fmt.Errorf("unsupported build action: %s", req.Action)
+	}
+	route, err := store.UpsertWebhookRoute(ctx, projectKey, req)
+	if err != nil {
+		return WebhookRouteActionResponse{}, err
+	}
+	return WebhookRouteActionResponse{OK: true, WebhookRoute: route, MessageZh: "Webhook 路由已保存"}, nil
+}
+
 func (s *Service) CreateBuildCenterRun(ctx context.Context, projectKey string, req BuildCenterRunRequest) (BuildCenterRunResponse, error) {
 	store, ok := s.store.(BuildCenterExecutionStore)
 	if !ok {
@@ -151,6 +259,43 @@ func (s *Service) CreateBuildCenterRun(ctx context.Context, projectKey string, r
 	}
 	go s.executeBuildCenterRun(run, profile, req)
 	return BuildCenterRunResponse{Run: run}, nil
+}
+
+func normalizeProjectLifecycleStatus(status string) string {
+	status = strings.ToLower(strings.TrimSpace(status))
+	switch status {
+	case "active", "paused", "archived":
+		return status
+	default:
+		return "active"
+	}
+}
+
+func normalizeCodeProvider(provider string) string {
+	provider = strings.ToLower(strings.TrimSpace(provider))
+	switch provider {
+	case "github", "gitea", "gitlab", "generic":
+		return provider
+	default:
+		return provider
+	}
+}
+
+func boolValue(value *bool, fallback bool) bool {
+	if value == nil {
+		return fallback
+	}
+	return *value
+}
+
+func normalizeRawMessage(value json.RawMessage, fallback string) json.RawMessage {
+	if len(value) == 0 || strings.TrimSpace(string(value)) == "null" {
+		return json.RawMessage(fallback)
+	}
+	if !json.Valid(value) {
+		return json.RawMessage(fallback)
+	}
+	return value
 }
 
 func (s *Service) executeBuildCenterRun(run BuildCenterRunAdmin, profile BuildProfileAdmin, req BuildCenterRunRequest) {
