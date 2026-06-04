@@ -230,6 +230,7 @@ POST /api/v1/workers/tasks/{task_id}/fail
 - 非 dry-run 部署会自动投递 `deploy` 类型 Worker 任务，Worker complete/fail 后回填 `deployment_records` 状态、日志和外部部署信息。
 - `releasectl worker-run` 已作为外部机器 agent 接入现有 Worker API，支持注册、心跳、领取任务、执行 `metadata.command` / `metadata.prepared_command`、回传日志和 complete/fail。
 - 部署中心已支持从当前部署记录回滚到同一目标上一条成功部署；dry-run 只落回滚记录，非 dry-run 会继续投递 Worker。
+- 部署目标保存、部署记录创建、完成、失败和回滚都会写 `audit_events`，用于审计部署链路。
 
 外部机器最小启动方式：
 
@@ -465,6 +466,11 @@ worker 注册
 - prod 环境发布需要审批。
 - 回滚基于上一条成功 `deployment_records` 或 `release_plans`。
 - 所有操作写 `audit_events`。
+
+当前已落地：
+
+- 部署记录已支持按同目标上一条成功记录生成回滚部署，并可 dry-run 或投递 Worker。
+- 部署目标保存、部署创建、完成、失败和回滚已写入 `audit_events`。
 
 ## 9. 当前分支建议范围
 

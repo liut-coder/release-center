@@ -97,6 +97,12 @@ func TestCreateDeploymentEnqueuesWorkerForRealDeployment(t *testing.T) {
 	if req.Metadata["deployment_record_id"] != "deployment-1" {
 		t.Fatalf("deployment_record_id missing from metadata: %#v", req.Metadata)
 	}
+	if len(store.auditEvents) != 1 || store.auditEvents[0].Action != "deployment.create" {
+		t.Fatalf("expected deployment.create audit, got %#v", store.auditEvents)
+	}
+	if store.auditEvents[0].Metadata["worker_task_id"] != "worker-task-1" {
+		t.Fatalf("worker_task_id missing from audit metadata: %#v", store.auditEvents[0].Metadata)
+	}
 }
 
 func TestCreateDeploymentDoesNotEnqueueWorkerForDryRun(t *testing.T) {
@@ -120,6 +126,12 @@ func TestCreateDeploymentDoesNotEnqueueWorkerForDryRun(t *testing.T) {
 	}
 	if resp.WorkerTask != nil || len(store.workerRequests) != 0 {
 		t.Fatalf("dry-run should not enqueue worker task: resp=%#v requests=%#v", resp, store.workerRequests)
+	}
+	if len(store.auditEvents) != 1 || store.auditEvents[0].Action != "deployment.create" {
+		t.Fatalf("expected dry-run deployment.create audit, got %#v", store.auditEvents)
+	}
+	if store.auditEvents[0].Metadata["dry_run"] != true {
+		t.Fatalf("dry_run missing from audit metadata: %#v", store.auditEvents[0].Metadata)
 	}
 }
 
@@ -187,6 +199,15 @@ func TestRollbackDeploymentCreatesDryRunFromPreviousSuccess(t *testing.T) {
 	if _, ok := req.Metadata["prepared_command"]; ok {
 		t.Fatalf("rollback metadata should let deployment creation regenerate prepared_command: %#v", req.Metadata)
 	}
+	if len(store.auditEvents) != 2 {
+		t.Fatalf("expected create and rollback audit events, got %#v", store.auditEvents)
+	}
+	if store.auditEvents[1].Action != "deployment.rollback" {
+		t.Fatalf("expected deployment.rollback audit, got %#v", store.auditEvents)
+	}
+	if store.auditEvents[1].Metadata["rollback_to_deployment_id"] != "deployment-previous" {
+		t.Fatalf("rollback audit metadata missing target: %#v", store.auditEvents[1].Metadata)
+	}
 }
 
 func TestRollbackDeploymentEnqueuesWorkerForRealRollback(t *testing.T) {
@@ -236,6 +257,17 @@ func TestRollbackDeploymentEnqueuesWorkerForRealRollback(t *testing.T) {
 	if store.workerRequests[0].Metadata["rollback_from_deployment_id"] != "deployment-current" {
 		t.Fatalf("worker metadata missing rollback source: %#v", store.workerRequests[0].Metadata)
 	}
+	if len(store.auditEvents) != 2 || store.auditEvents[1].Action != "deployment.rollback" {
+		t.Fatalf("expected rollback audit events, got %#v", store.auditEvents)
+	}
+}
+
+type deploymentAuditEvent struct {
+	Action     string
+	TargetType string
+	TargetID   string
+	Message    string
+	Metadata   map[string]any
 }
 
 type deploymentDispatchStore struct {
@@ -247,6 +279,7 @@ type deploymentDispatchStore struct {
 	previousRecord     DeploymentRecordAdmin
 	deploymentRequests []CreateDeploymentRequest
 	workerRequests     []CreateWorkerTaskRequest
+	auditEvents        []deploymentAuditEvent
 }
 
 func (s *deploymentDispatchStore) CreateDeploymentRecord(ctx context.Context, req CreateDeploymentRequest) (DeploymentRecordAdmin, error) {
@@ -272,4 +305,15 @@ func (s *deploymentDispatchStore) CreateWorkerTask(ctx context.Context, req Crea
 		RequiredLabels: req.RequiredLabels,
 		Metadata:       jsonb(req.Metadata),
 	}, nil
+}
+
+func (s *deploymentDispatchStore) InsertAudit(ctx context.Context, action, targetType, targetID, message string, metadata map[string]any) error {
+	s.auditEvents = append(s.auditEvents, deploymentAuditEvent{
+		Action:     action,
+		TargetType: targetType,
+		TargetID:   targetID,
+		Message:    message,
+		Metadata:   metadata,
+	})
+	return nil
 }

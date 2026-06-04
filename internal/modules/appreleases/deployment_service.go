@@ -41,6 +41,13 @@ func (s *Service) CreateDeploymentTarget(ctx context.Context, req CreateDeployme
 	if err != nil {
 		return DeploymentActionResponse{}, err
 	}
+	s.insertDeploymentAudit(ctx, "deployment.target_save", "deployment_target", target.ID, "保存部署目标", map[string]any{
+		"project_id":  target.ProjectID,
+		"target_key":  target.TargetKey,
+		"provider":    target.Provider,
+		"environment": target.Environment,
+		"enabled":     target.Enabled,
+	})
 	return DeploymentActionResponse{OK: true, Target: &target, MessageZh: "部署目标已保存"}, nil
 }
 
@@ -105,12 +112,26 @@ func (s *Service) CreateDeployment(ctx context.Context, req CreateDeploymentRequ
 		resp.WorkerTask = &task
 		resp.MessageZh = "部署记录已创建并投递 Worker"
 	}
+	auditMetadata := deploymentRecordAuditMetadata(record)
+	auditMetadata["dry_run"] = req.DryRun
+	auditMetadata["worker_task_id"] = ""
+	if resp.WorkerTask != nil {
+		auditMetadata["worker_task_id"] = resp.WorkerTask.ID
+	}
+	s.insertDeploymentAudit(ctx, "deployment.create", "deployment_record", record.ID, "创建部署记录", auditMetadata)
 	return resp, nil
 }
 
 func (s *Service) CompleteDeployment(ctx context.Context, deploymentID string, req UpdateDeploymentStatusRequest) (DeploymentActionResponse, error) {
 	req.ProviderStatus = firstNonBlank(req.ProviderStatus, "success")
-	return s.updateDeploymentStatus(ctx, deploymentID, req, "部署已完成")
+	resp, err := s.updateDeploymentStatus(ctx, deploymentID, req, "部署已完成")
+	if err != nil {
+		return DeploymentActionResponse{}, err
+	}
+	if resp.Record != nil {
+		s.insertDeploymentAudit(ctx, "deployment.complete", "deployment_record", resp.Record.ID, "部署已完成", deploymentRecordAuditMetadata(*resp.Record))
+	}
+	return resp, nil
 }
 
 func (s *Service) FailDeployment(ctx context.Context, deploymentID string, req UpdateDeploymentStatusRequest) (DeploymentActionResponse, error) {
@@ -118,7 +139,16 @@ func (s *Service) FailDeployment(ctx context.Context, deploymentID string, req U
 	if strings.TrimSpace(req.ErrorMessage) == "" {
 		req.ErrorMessage = "deployment failed"
 	}
-	return s.updateDeploymentStatus(ctx, deploymentID, req, "部署失败已记录")
+	resp, err := s.updateDeploymentStatus(ctx, deploymentID, req, "部署失败已记录")
+	if err != nil {
+		return DeploymentActionResponse{}, err
+	}
+	if resp.Record != nil {
+		metadata := deploymentRecordAuditMetadata(*resp.Record)
+		metadata["error_message"] = resp.Record.ErrorMessage
+		s.insertDeploymentAudit(ctx, "deployment.fail", "deployment_record", resp.Record.ID, "部署失败已记录", metadata)
+	}
+	return resp, nil
 }
 
 func (s *Service) RollbackDeployment(ctx context.Context, deploymentID string, req RollbackDeploymentRequest) (DeploymentActionResponse, error) {
@@ -165,6 +195,17 @@ func (s *Service) RollbackDeployment(ctx context.Context, deploymentID string, r
 		resp.MessageZh = "回滚 dry-run 部署记录已创建"
 	} else {
 		resp.MessageZh = "回滚部署记录已创建并投递 Worker"
+	}
+	if resp.Record != nil {
+		metadata := deploymentRecordAuditMetadata(*resp.Record)
+		metadata["dry_run"] = req.DryRun
+		metadata["rollback_from_deployment_id"] = current.ID
+		metadata["rollback_to_deployment_id"] = previous.ID
+		metadata["rollback_reason"] = req.Reason
+		if resp.WorkerTask != nil {
+			metadata["worker_task_id"] = resp.WorkerTask.ID
+		}
+		s.insertDeploymentAudit(ctx, "deployment.rollback", "deployment_record", resp.Record.ID, "创建回滚部署", metadata)
 	}
 	return resp, nil
 }
@@ -217,6 +258,32 @@ func rollbackDeploymentMetadata(current, previous DeploymentRecordAdmin, req Rol
 		"rollback_reason":             req.Reason,
 	})
 	return metadata
+}
+
+func (s *Service) insertDeploymentAudit(ctx context.Context, action, targetType, targetID, message string, metadata map[string]any) {
+	if s.store == nil {
+		return
+	}
+	_ = s.store.InsertAudit(ctx, action, targetType, targetID, message, metadata)
+}
+
+func deploymentRecordAuditMetadata(record DeploymentRecordAdmin) map[string]any {
+	return map[string]any{
+		"target_id":              record.TargetID,
+		"target_key":             record.TargetKey,
+		"provider":               record.Provider,
+		"environment":            record.Environment,
+		"provider_status":        record.ProviderStatus,
+		"version_name":           record.VersionName,
+		"build_number":           record.BuildNumber,
+		"git_commit":             record.GitCommit,
+		"run_id":                 record.RunID,
+		"app_build_id":           record.AppBuildID,
+		"app_build_artifact_id":  record.AppBuildArtifactID,
+		"deployment_url":         record.DeploymentURL,
+		"external_deployment_id": record.ExternalDeploymentID,
+		"triggered_by":           record.TriggeredBy,
+	}
 }
 
 func normalizeDeploymentProvider(provider string) string {
