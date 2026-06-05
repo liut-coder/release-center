@@ -122,6 +122,7 @@ integration_credentials
 - 发布计划已支持直接按目标创建部署记录；前端发布计划列表可选择部署目标并生成 dry-run 部署记录。
 - 发布单元保存、发布计划创建、publish/pause/rollback 状态动作和发布计划部署都会写入 `audit_events`。
 - 旧 APK 发布接口继续保留兼容 update-check；创建、发布、暂停、回滚、灰度和说明更新会自动镜像到 Android 发布单元和发布计划。
+- Android 构建记录前端已支持一键带入统一发布计划工作台，预填 Android unit、环境、版本和 APK 制品引用；旧 Android 发布表单继续作为兼容入口。
 
 ### 表职责
 
@@ -563,6 +564,6 @@ origin=https://github.com/liut-coder/release-center.git
 
 - Cloudflare 真实执行器：提供 worker 侧 wrangler 执行脚本、凭据注入约定、Pages/Workers/R2 smoke。
 - GitHub 接入验收：配置 webhook secret/route enable，完成 push/tag 自动创建构建任务的真实仓库 smoke。
-- Android 发布单元迁移：旧 APK 发布接口已开始镜像 Android release unit/release plan；下一步把前端 APK 发布页收敛进统一发布计划工作台。
+- Android 发布单元迁移：旧 APK 发布接口已镜像 Android release unit/release plan，前端构建记录已可一键进入统一发布计划工作台；下一步逐步弱化旧 Android 发布表单。
 - 审批/RBAC：发布计划和部署记录的 prod 审批门禁已落地；下一步做构建/发布/部署权限拦截和角色权限矩阵验收。
 - 回滚执行闭环：部署记录回滚、release plan 回滚计划生成和前端回滚目标选择已落地；下一步做真实生产回滚演练。

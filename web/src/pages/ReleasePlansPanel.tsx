@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Cloud, FileText, History, PauseCircle, RefreshCw, Rocket, Search, ShieldCheck, SlidersHorizontal, Upload } from "lucide-react";
 import { getArtifactCenterOverview, type ArtifactCenterItem } from "@/api/artifacts";
@@ -57,38 +57,81 @@ const channelOptions = ["dev", "internal", "beta", "stable", "emergency"];
 
 type PlanAction = "publish" | "approve" | "pause" | "rollback" | "rollback_deploy";
 
-export function ReleasePlansPanel() {
-  const [projectKey, setProjectKey] = useState("release-center");
-  const [unitKey, setUnitKey] = useState("admin-web");
-  const [environmentKey, setEnvironmentKey] = useState("dev");
-  const [planTitle, setPlanTitle] = useState("管理后台 Web 发布");
-  const [versionName, setVersionName] = useState(defaultVersionName());
-  const [buildNumber, setBuildNumber] = useState("1");
-  const [gitCommit, setGitCommit] = useState("");
-  const [channel, setChannel] = useState("dev");
+export type ReleasePlanDraftSeed = {
+  seedKey: string;
+  projectKey?: string;
+  unitKey?: string;
+  environmentKey?: string;
+  channel?: string;
+  title?: string;
+  versionName?: string;
+  buildNumber?: string | number;
+  gitCommit?: string;
+  artifactName?: string;
+  artifactType?: string;
+  artifactFileName?: string;
+  artifactRef?: string;
+  artifactAppBuildId?: string;
+  artifactAppBuildArtifactId?: string;
+  unitTypeFilter?: string;
+  message?: string;
+};
+
+export function ReleasePlansPanel({ draftSeed }: { draftSeed?: ReleasePlanDraftSeed } = {}) {
+  const [projectKey, setProjectKey] = useState(draftSeed?.projectKey ?? "release-center");
+  const [unitKey, setUnitKey] = useState(draftSeed?.unitKey ?? "admin-web");
+  const [environmentKey, setEnvironmentKey] = useState(draftSeed?.environmentKey ?? "dev");
+  const [planTitle, setPlanTitle] = useState(draftSeed?.title ?? "管理后台 Web 发布");
+  const [versionName, setVersionName] = useState(draftSeed?.versionName ?? defaultVersionName());
+  const [buildNumber, setBuildNumber] = useState(draftSeed?.buildNumber !== undefined ? String(draftSeed.buildNumber) : "1");
+  const [gitCommit, setGitCommit] = useState(draftSeed?.gitCommit ?? "");
+  const [channel, setChannel] = useState(draftSeed?.channel ?? "dev");
   const [rollout, setRollout] = useState("100");
   const [targetType, setTargetType] = useState("all");
   const [targetValue, setTargetValue] = useState("");
-  const [artifactName, setArtifactName] = useState("web-dist");
-  const [artifactType, setArtifactType] = useState("web_dist");
-  const [artifactFileName, setArtifactFileName] = useState("");
-  const [artifactRef, setArtifactRef] = useState("");
+  const [artifactName, setArtifactName] = useState(draftSeed?.artifactName ?? "web-dist");
+  const [artifactType, setArtifactType] = useState(draftSeed?.artifactType ?? "web_dist");
+  const [artifactFileName, setArtifactFileName] = useState(draftSeed?.artifactFileName ?? "");
+  const [artifactRef, setArtifactRef] = useState(draftSeed?.artifactRef ?? "");
   const [selectedArtifactId, setSelectedArtifactId] = useState("");
   const [artifactBuildRunId, setArtifactBuildRunId] = useState("");
-  const [artifactAppBuildId, setArtifactAppBuildId] = useState("");
-  const [artifactAppBuildArtifactId, setArtifactAppBuildArtifactId] = useState("");
+  const [artifactAppBuildId, setArtifactAppBuildId] = useState(draftSeed?.artifactAppBuildId ?? "");
+  const [artifactAppBuildArtifactId, setArtifactAppBuildArtifactId] = useState(draftSeed?.artifactAppBuildArtifactId ?? "");
   const [newUnitProjectKey, setNewUnitProjectKey] = useState("release-center");
   const [newUnitKey, setNewUnitKey] = useState("");
   const [newUnitName, setNewUnitName] = useState("");
   const [newUnitType, setNewUnitType] = useState<ReleaseUnitType>("web");
   const [newUnitChannel, setNewUnitChannel] = useState("dev");
   const [environmentFilter, setEnvironmentFilter] = useState("全部");
-  const [unitTypeFilter, setUnitTypeFilter] = useState("全部");
+  const [unitTypeFilter, setUnitTypeFilter] = useState(draftSeed?.unitTypeFilter ?? "全部");
   const [selectedDeploymentTargetId, setSelectedDeploymentTargetId] = useState("");
   const [deploymentDryRun, setDeploymentDryRun] = useState(true);
   const [query, setQuery] = useState("");
   const [message, setMessage] = useState("发布计划已就绪。");
   const [messageTone, setMessageTone] = useState<"default" | "success" | "warning" | "danger">("default");
+
+  useEffect(() => {
+    if (!draftSeed?.seedKey) return;
+    if (draftSeed.projectKey) setProjectKey(draftSeed.projectKey);
+    if (draftSeed.unitKey) setUnitKey(draftSeed.unitKey);
+    if (draftSeed.environmentKey) setEnvironmentKey(draftSeed.environmentKey);
+    if (draftSeed.channel) setChannel(draftSeed.channel);
+    if (draftSeed.title) setPlanTitle(draftSeed.title);
+    if (draftSeed.versionName) setVersionName(draftSeed.versionName);
+    if (draftSeed.buildNumber !== undefined) setBuildNumber(String(draftSeed.buildNumber));
+    if (draftSeed.gitCommit !== undefined) setGitCommit(draftSeed.gitCommit);
+    if (draftSeed.artifactName) setArtifactName(draftSeed.artifactName);
+    if (draftSeed.artifactType) setArtifactType(draftSeed.artifactType);
+    if (draftSeed.artifactFileName !== undefined) setArtifactFileName(draftSeed.artifactFileName);
+    if (draftSeed.artifactRef !== undefined) setArtifactRef(draftSeed.artifactRef);
+    if (draftSeed.artifactAppBuildId !== undefined) setArtifactAppBuildId(draftSeed.artifactAppBuildId);
+    if (draftSeed.artifactAppBuildArtifactId !== undefined) setArtifactAppBuildArtifactId(draftSeed.artifactAppBuildArtifactId);
+    if (draftSeed.unitTypeFilter) setUnitTypeFilter(draftSeed.unitTypeFilter);
+    setSelectedArtifactId("");
+    setArtifactBuildRunId("");
+    setMessage(draftSeed.message || "发布计划草稿已带入。");
+    setMessageTone("success");
+  }, [draftSeed?.seedKey]);
 
   const overviewQuery = useQuery({
     queryKey: RELEASE_PLANS_QUERY_KEY,

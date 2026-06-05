@@ -66,7 +66,7 @@ import { Switch } from "@/components/ui/Switch";
 import { Table, Td, Th } from "@/components/ui/Table";
 import { cn } from "@/lib/cn";
 import { formatDateTime } from "@/lib/format";
-import { ReleasePlansPanel } from "@/pages/ReleasePlansPanel";
+import { ReleasePlansPanel, type ReleasePlanDraftSeed } from "@/pages/ReleasePlansPanel";
 
 const channels = ["dev", "internal", "beta", "stable", "emergency"];
 const resourceChannels = ["dev", "internal", "beta", "stable"];
@@ -116,6 +116,7 @@ type BuildVersionSuggestion = {
 
 export function AppReleasesPage() {
   const [activeTab, setActiveTab] = useState<ReleaseTab>("plans");
+  const [releasePlanDraftSeed, setReleasePlanDraftSeed] = useState<ReleasePlanDraftSeed>();
   const [channelFilter, setChannelFilter] = useState("全部");
   const [query, setQuery] = useState("");
   const [gitRef, setGitRef] = useState("main");
@@ -608,7 +609,7 @@ export function AppReleasesPage() {
         </div>
       ) : null}
 
-      {activeTab === "plans" ? <ReleasePlansPanel /> : null}
+      {activeTab === "plans" ? <ReleasePlansPanel draftSeed={releasePlanDraftSeed} /> : null}
 
       {activeTab === "overview" ? (
         <OverviewPanel
@@ -683,6 +684,10 @@ export function AppReleasesPage() {
             setReleaseChannel(job.channel);
             setReleaseTitle(`${job.version_name} 更新`);
             setActiveTab("app");
+          }}
+          onCreateReleasePlan={(job) => {
+            setReleasePlanDraftSeed(androidReleasePlanDraftSeed(job));
+            setActiveTab("plans");
           }}
         />
       ) : null}
@@ -1122,6 +1127,7 @@ function BuildsPanel({
   activeJob,
   buildJobs,
   onCreateRelease,
+  onCreateReleasePlan,
 }: {
   gitRef: string;
   setGitRef: (value: string) => void;
@@ -1148,6 +1154,7 @@ function BuildsPanel({
   activeJob?: AppReleaseBuildJob;
   buildJobs: AppReleaseBuildJob[];
   onCreateRelease: (job: AppReleaseBuildJob) => void;
+  onCreateReleasePlan: (job: AppReleaseBuildJob) => void;
 }) {
   return (
     <div className="grid gap-4 xl:grid-cols-[360px_minmax(0,1fr)]">
@@ -1204,7 +1211,7 @@ function BuildsPanel({
             <div className="font-medium">构建记录</div>
             <Badge>{buildJobs.length} 条</Badge>
           </div>
-          <BuildJobsTable jobs={buildJobs} onCreateRelease={onCreateRelease} />
+          <BuildJobsTable jobs={buildJobs} onCreateRelease={onCreateRelease} onCreateReleasePlan={onCreateReleasePlan} />
         </Card>
       </div>
     </div>
@@ -2022,7 +2029,15 @@ function BuildJobPanel({ job, compact = false }: { job: AppReleaseBuildJob; comp
   );
 }
 
-function BuildJobsTable({ jobs, onCreateRelease }: { jobs: AppReleaseBuildJob[]; onCreateRelease: (job: AppReleaseBuildJob) => void }) {
+function BuildJobsTable({
+  jobs,
+  onCreateRelease,
+  onCreateReleasePlan,
+}: {
+  jobs: AppReleaseBuildJob[];
+  onCreateRelease: (job: AppReleaseBuildJob) => void;
+  onCreateReleasePlan: (job: AppReleaseBuildJob) => void;
+}) {
   return (
     <Table>
       <thead>
@@ -2054,9 +2069,14 @@ function BuildJobsTable({ jobs, onCreateRelease }: { jobs: AppReleaseBuildJob[];
             </Td>
             <Td>{formatDateTime(job.finished_at || job.started_at || job.created_at)}</Td>
             <Td>
-              <Button variant="secondary" size="sm" disabled={job.status !== "success"} onClick={() => onCreateRelease(job)}>
-                创建发布
-              </Button>
+              <div className="flex flex-wrap gap-2">
+                <Button variant="secondary" size="sm" disabled={job.status !== "success"} onClick={() => onCreateReleasePlan(job)}>
+                  发布计划
+                </Button>
+                <Button variant="secondary" size="sm" disabled={job.status !== "success"} onClick={() => onCreateRelease(job)}>
+                  创建发布
+                </Button>
+              </div>
             </Td>
           </tr>
         ))}
@@ -2908,6 +2928,69 @@ function buildArtifacts(job: AppReleaseBuildJob): AppBuildArtifact[] {
       created_at: job.finished_at || job.created_at,
     },
   ];
+}
+
+function androidReleasePlanDraftSeed(job: AppReleaseBuildJob): ReleasePlanDraftSeed {
+  const artifact = preferredAndroidArtifact(job);
+  const artifactName = artifact?.name || job.artifact_type || "apk";
+  const artifactType = artifact?.artifact_type || job.artifact_type || "apk";
+  const artifactFileName = artifact?.file_name || job.file_name || fileNameFromPath(artifact?.artifact_path || job.artifact_path) || "";
+  return {
+    seedKey: `android:${job.id}:${Date.now()}`,
+    projectKey: "release-center",
+    unitKey: "game-helper-android",
+    environmentKey: androidPlanEnvironment(job.channel),
+    channel: job.channel,
+    title: `Android ${job.version_name} 发布`,
+    versionName: job.version_name,
+    buildNumber: job.build_number ?? job.version_code,
+    gitCommit: job.git_commit || job.git_ref,
+    artifactName,
+    artifactType,
+    artifactFileName,
+    artifactRef: artifact?.id ? `app_build_artifact:${artifact.id}` : `app_build:${job.id}`,
+    artifactAppBuildId: job.id,
+    artifactAppBuildArtifactId: artifact?.id ?? "",
+    unitTypeFilter: "android",
+    message: `已从 Android 构建 ${job.version_name} 带入发布计划草稿。`,
+  };
+}
+
+function preferredAndroidArtifact(job: AppReleaseBuildJob) {
+  const artifacts = job.artifacts ?? [];
+  return (
+    artifacts.find((artifact) => ["apk", "aab"].includes((artifact.artifact_type || "").toLowerCase())) ||
+    artifacts.find((artifact) => /\.(apk|aab)$/i.test(artifact.file_name || artifact.artifact_path || "")) ||
+    artifacts[0]
+  );
+}
+
+function androidPlanEnvironment(channel?: string) {
+  switch ((channel || "").trim().toLowerCase()) {
+    case "dev":
+    case "develop":
+    case "development":
+    case "alpha":
+    case "canary":
+      return "dev";
+    case "test":
+    case "testing":
+    case "qa":
+      return "test";
+    case "staging":
+    case "stage":
+    case "pre":
+    case "preview":
+    case "beta":
+      return "staging";
+    default:
+      return "prod";
+  }
+}
+
+function fileNameFromPath(value?: string) {
+  if (!value) return "";
+  return value.split(/[\\/]/).filter(Boolean).pop() || "";
 }
 
 function sumArtifactSize(artifacts: AppBuildArtifact[]) {
