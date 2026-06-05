@@ -407,6 +407,10 @@ func (s *PostgresStore) ReplaceBuildCenterRunArtifacts(ctx context.Context, runI
 		return err
 	}
 	for _, artifact := range artifacts {
+		metadata := rawJSONMap(artifact.Metadata)
+		if _, ok := metadata["source"]; !ok {
+			metadata["source"] = "buildctl_status"
+		}
 		if _, err := tx.Exec(ctx, `
 			insert into build_center_run_artifacts (
 			  tenant_id, run_id, name, artifact_type, file_name, local_path,
@@ -415,7 +419,7 @@ func (s *PostgresStore) ReplaceBuildCenterRunArtifacts(ctx context.Context, runI
 			values ('default', $1::uuid, $2, $3, $4, $5, $6, $7, $8, $9, $10)
 		`, runID, artifact.Name, artifact.ArtifactType, artifact.FileName, artifact.LocalPath,
 			artifact.SizeBytes, artifact.SHA256, artifact.UploadStatus, artifact.DownloadURL,
-			jsonb(map[string]any{"source": "buildctl_status"})); err != nil {
+			jsonb(metadata)); err != nil {
 			return err
 		}
 	}

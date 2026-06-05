@@ -231,6 +231,7 @@ POST /api/v1/workers/tasks/{task_id}/fail
 - Admin 前端新增 Worker 接入页面，支持 Worker 状态、标签能力、任务队列和手工投递任务可视化。
 - 非 dry-run 部署会自动投递 `deploy` 类型 Worker 任务，Worker complete/fail 后回填 `deployment_records` 状态、日志和外部部署信息。
 - `releasectl worker-run` 已作为外部机器 agent 接入现有 Worker API，支持注册、心跳、领取任务、执行 `metadata.command` / `metadata.prepared_command`、回传日志和 complete/fail。
+- Worker 回传 artifacts 或 complete 附带 artifacts 时，会按 `build_run_id` 镜像到 `build_center_run_artifacts`，制品中心可直接选择外部机器构建产物创建发布计划或部署。
 - 部署中心已支持从当前部署记录回滚到同一目标上一条成功部署；dry-run 只落回滚记录，非 dry-run 会继续投递 Worker。
 - 部署目标保存、部署记录创建、完成、失败和回滚都会写 `audit_events`，用于审计部署链路。
 - 构建项目、代码仓库、构建 profile、Webhook 路由和手工构建任务创建都会写 `audit_events`，用于审计构建链路。
@@ -527,6 +528,7 @@ http://193.123.98.20:18085/
 - 部署中心：支持多项目部署目标、Cloudflare Pages/Workers/R2、Docker、Webhook、SSH、Kubernetes 等 provider 预留，支持 dry-run 和非 dry-run 投递。
 - 集成配置：Git 仓库、构建 profile、webhook route 和 credential/secret 引用已经进入后台维护页面。
 - Worker 接入：外部机器可注册、心跳、领取任务、上传日志和产物、complete/fail 回填状态。
+- 外部产物闭环：Worker 构建产物已镜像进入构建中心产物表，并通过制品中心进入发布计划/部署流程。
 - 部署闭环：非 dry-run 部署会创建 `deploy` 类型 Worker task，Worker 回传后更新 `deployment_records` 的状态、日志、外部部署 ID 和 URL。
 
 当前本地提交序列：

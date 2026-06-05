@@ -2,6 +2,7 @@ package appreleases
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -19,6 +20,10 @@ type WorkerStore interface {
 	SaveWorkerTaskArtifacts(ctx context.Context, taskID string, req WorkerTaskArtifactsRequest) (WorkerTaskAdmin, error)
 	CompleteWorkerTask(ctx context.Context, taskID string, req WorkerTaskCompleteRequest) (WorkerTaskAdmin, error)
 	FailWorkerTask(ctx context.Context, taskID string, req WorkerTaskFailRequest) (WorkerTaskAdmin, error)
+}
+
+type WorkerArtifactMirrorStore interface {
+	ReplaceBuildCenterRunArtifacts(ctx context.Context, runID string, artifacts []BuildCenterRunArtifact) error
 }
 
 func (s *Service) WorkerOverview(ctx context.Context) (WorkerOverviewResponse, error) {
@@ -157,6 +162,9 @@ func (s *Service) SaveWorkerTaskArtifacts(ctx context.Context, taskID string, re
 	if err != nil {
 		return WorkerActionResponse{}, err
 	}
+	if err := s.mirrorWorkerTaskArtifacts(ctx, task, req.Artifacts); err != nil {
+		return WorkerActionResponse{}, err
+	}
 	return WorkerActionResponse{OK: true, Task: &task, MessageZh: "Worker 产物已接收"}, nil
 }
 
@@ -173,6 +181,9 @@ func (s *Service) CompleteWorkerTask(ctx context.Context, taskID string, req Wor
 	}
 	task, err := store.CompleteWorkerTask(ctx, taskID, req)
 	if err != nil {
+		return WorkerActionResponse{}, err
+	}
+	if err := s.mirrorWorkerTaskArtifacts(ctx, task, req.Artifacts); err != nil {
 		return WorkerActionResponse{}, err
 	}
 	return WorkerActionResponse{OK: true, Task: &task, MessageZh: "Worker 任务已完成"}, nil
@@ -235,4 +246,47 @@ func normalizeWorkerLogLines(lines []string) []string {
 		lines[i] = strings.TrimRight(lines[i], "\r\n")
 	}
 	return lines
+}
+
+func (s *Service) mirrorWorkerTaskArtifacts(ctx context.Context, task WorkerTaskAdmin, artifacts []WorkerTaskArtifact) error {
+	if task.BuildRunID == "" || len(artifacts) == 0 {
+		return nil
+	}
+	store, ok := s.store.(WorkerArtifactMirrorStore)
+	if !ok {
+		return nil
+	}
+	items := make([]BuildCenterRunArtifact, 0, len(artifacts))
+	for _, artifact := range artifacts {
+		metadata := mergeMaps(artifact.Metadata, map[string]any{
+			"source":         "worker_task_artifact",
+			"worker_task_id": task.ID,
+			"worker_id":      task.WorkerID,
+			"task_type":      task.TaskType,
+			"action":         task.Action,
+		})
+		items = append(items, BuildCenterRunArtifact{
+			RunID:        task.BuildRunID,
+			Name:         firstNonBlank(strings.TrimSpace(artifact.Name), strings.TrimSpace(artifact.FileName), "artifact"),
+			ArtifactType: firstNonBlank(strings.TrimSpace(artifact.ArtifactType), "artifact"),
+			FileName:     strings.TrimSpace(artifact.FileName),
+			LocalPath:    strings.TrimSpace(artifact.LocalPath),
+			SizeBytes:    artifact.SizeBytes,
+			SHA256:       strings.TrimSpace(artifact.SHA256),
+			UploadStatus: workerArtifactUploadStatus(artifact),
+			DownloadURL:  strings.TrimSpace(artifact.DownloadURL),
+			Metadata:     json.RawMessage(jsonb(metadata)),
+		})
+	}
+	return store.ReplaceBuildCenterRunArtifacts(ctx, task.BuildRunID, items)
+}
+
+func workerArtifactUploadStatus(artifact WorkerTaskArtifact) string {
+	if strings.TrimSpace(artifact.DownloadURL) != "" {
+		return "uploaded"
+	}
+	if strings.TrimSpace(artifact.LocalPath) != "" {
+		return "local"
+	}
+	return "recorded"
 }
