@@ -145,6 +145,7 @@ cp -a web/dist/. "$WEB_DIST"/
 - 已实现 webhook route 命中逻辑，命中后创建 `build_center_runs`。
 - `cmd/server` 已接入 GitHub/Gitea HMAC 签名校验中间件。
 - 集成配置页面已能维护项目、Git 仓库、构建 profile、Webhook route 和 credential/secret 引用。
+- 集成配置页面已新增快速接入向导：支持 GitHub Web / Go Server / Android 模板、粘贴仓库 URL 自动解析 provider/full name/project key、自动生成 profile/route/credential ref、预检必填项、复制 webhook endpoint、一键保存项目 + 仓库 + profile + route。已有项目、仓库、profile 和 route 可一键载入编辑，减少重复手填。
 - release-center 的 main push 和 tag route 已有 migration 预置，但默认 disabled；配置 secret 和认证后再启用。
 
 ## 4. 最新提交
@@ -178,6 +179,13 @@ npm --prefix web run typecheck
 npm --prefix web run build
 
 git diff --check
+```
+
+集成配置快速接入向导完成后已执行：
+
+```bash
+npm --prefix web run typecheck
+npm --prefix web run build
 ```
 
 公网 smoke：

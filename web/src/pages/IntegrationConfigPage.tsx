@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import { useMemo, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { GitBranch, Hammer, KeyRound, RefreshCw, Save, Webhook } from "lucide-react";
+import { CheckCircle2, Copy, GitBranch, Hammer, KeyRound, RefreshCw, Save, Wand2, Webhook } from "lucide-react";
 import {
   createBuildCenterProject,
   getBuildCenterOverview,
@@ -30,8 +30,50 @@ const stackOptions = ["generic", "node", "go", "android", "docker", "cloudflare"
 const buildTypeOptions = ["release", "debug", "web", "server", "worker", "docker"];
 const actionOptions = ["all", "status", "fetch", "prepare", "build", "image", "upload", "verify"];
 const eventOptions = ["push", "tag", "workflow_run", "*"];
+const setupTemplates = [
+  {
+    key: "github_web",
+    name: "GitHub Web 项目",
+    provider: "github",
+    stackType: "node",
+    buildType: "web",
+    buildAction: "all",
+    profileKey: "web",
+    profileName: "Web 构建",
+    commands: { all: ["buildctl all {{projectKey}}"] },
+    artifactRules: [{ name: "web-dist", type: "web_dist", path: "dist" }],
+    routeAction: "all",
+  },
+  {
+    key: "github_server",
+    name: "GitHub Go 服务",
+    provider: "github",
+    stackType: "go",
+    buildType: "server",
+    buildAction: "all",
+    profileKey: "server",
+    profileName: "服务端构建",
+    commands: { all: ["buildctl all {{projectKey}}"] },
+    artifactRules: [{ name: "server-binary", type: "server_binary", path: "bin" }],
+    routeAction: "all",
+  },
+  {
+    key: "github_android",
+    name: "GitHub Android",
+    provider: "github",
+    stackType: "android",
+    buildType: "release",
+    buildAction: "all",
+    profileKey: "android",
+    profileName: "Android 构建",
+    commands: { all: ["buildctl all {{projectKey}}"] },
+    artifactRules: [{ name: "apk", type: "apk", path: "app/build/outputs/apk" }],
+    routeAction: "all",
+  },
+] as const;
 
 export function IntegrationConfigPage() {
+  const [setupTemplateKey, setSetupTemplateKey] = useState<(typeof setupTemplates)[number]["key"]>("github_web");
   const [projectKey, setProjectKey] = useState("release-center");
   const [projectName, setProjectName] = useState("Release Center");
   const [projectDescription, setProjectDescription] = useState("轻量发布中心");
@@ -49,11 +91,11 @@ export function IntegrationConfigPage() {
   const [triggerOnPush, setTriggerOnPush] = useState(false);
   const [triggerOnTag, setTriggerOnTag] = useState(false);
 
-  const [profileKey, setProfileKey] = useState("default");
-  const [profileName, setProfileName] = useState("默认构建");
+  const [profileKey, setProfileKey] = useState("web");
+  const [profileName, setProfileName] = useState("Web 构建");
   const [buildCenterProject, setBuildCenterProject] = useState("release-center");
   const [stackType, setStackType] = useState("node");
-  const [buildType, setBuildType] = useState("release");
+  const [buildType, setBuildType] = useState("web");
   const [configPath, setConfigPath] = useState("config/release-center.yml");
   const [sourceWorkdir, setSourceWorkdir] = useState("");
   const [profileDefaultRef, setProfileDefaultRef] = useState("main");
@@ -66,10 +108,10 @@ export function IntegrationConfigPage() {
   const [artifactRulesText, setArtifactRulesText] = useState(`[{"name":"web-dist","type":"web_dist","path":"dist"}]`);
 
   const [routeRepositoryId, setRouteRepositoryId] = useState("");
-  const [routeProfileKey, setRouteProfileKey] = useState("default");
+  const [routeProfileKey, setRouteProfileKey] = useState("web");
   const [routeEventType, setRouteEventType] = useState("push");
   const [routeRefPattern, setRouteRefPattern] = useState("refs/heads/main");
-  const [routeAction, setRouteAction] = useState("status");
+  const [routeAction, setRouteAction] = useState("all");
   const [routeEnabled, setRouteEnabled] = useState(false);
   const [message, setMessage] = useState("集成配置已就绪。");
   const [messageTone, setMessageTone] = useState<"default" | "success" | "warning" | "danger">("default");
@@ -91,6 +133,40 @@ export function IntegrationConfigPage() {
   const routes = selectedProject?.webhook_routes ?? [];
   const metrics = useMemo(() => integrationMetrics(projects), [projects]);
   const effectiveRepositoryId = routeRepositoryId || repositories[0]?.id || "";
+  const selectedTemplate = setupTemplates.find((template) => template.key === setupTemplateKey) ?? setupTemplates[0];
+  const derivedPreview = useMemo(
+    () =>
+      buildDerivedPreview({
+        projectKey,
+        repoProvider,
+        repoURL,
+        repoFullName,
+        repoDefaultRef,
+        credentialRef,
+        webhookSecretRef,
+        profileKey,
+        stackType,
+        buildAction,
+        routeEventType,
+        routeRefPattern,
+        routeEnabled,
+      }),
+    [
+      projectKey,
+      repoProvider,
+      repoURL,
+      repoFullName,
+      repoDefaultRef,
+      credentialRef,
+      webhookSecretRef,
+      profileKey,
+      stackType,
+      buildAction,
+      routeEventType,
+      routeRefPattern,
+      routeEnabled,
+    ],
+  );
 
   const createProjectMutation = useMutation({
     mutationFn: () =>
@@ -178,9 +254,181 @@ export function IntegrationConfigPage() {
     },
     onError: (error) => showConfigError(error, "保存 Webhook 路由失败", setMessage, setMessageTone),
   });
+  const quickSetupMutation = useMutation({
+    mutationFn: async () => {
+      const projectResp = await createBuildCenterProject({
+        project_key: projectKey.trim(),
+        name: projectName.trim(),
+        description: projectDescription.trim(),
+        owner_account: ownerAccount.trim(),
+        lifecycle_status: lifecycleStatus,
+        default_channel: defaultChannel,
+        metadata: { source: "admin_web", ui: "integration_quick_setup", template: setupTemplateKey },
+      });
+      const repositoryResp = await upsertCodeRepository(projectKey, {
+        provider: repoProvider,
+        repo_url: repoURL.trim(),
+        repo_full_name: repoFullName.trim(),
+        default_ref: repoDefaultRef.trim(),
+        credential_ref: credentialRef.trim(),
+        webhook_secret_ref: webhookSecretRef.trim(),
+        webhook_enabled: webhookEnabled,
+        trigger_on_push: triggerOnPush,
+        trigger_on_tag: triggerOnTag,
+        metadata: { source: "admin_web", ui: "integration_quick_setup", template: setupTemplateKey },
+      });
+      const profileResp = await upsertBuildProfile(projectKey, {
+        profile_key: profileKey.trim(),
+        name: profileName.trim(),
+        build_center_project: buildCenterProject.trim(),
+        stack_type: stackType,
+        build_type: buildType,
+        config_path: configPath.trim(),
+        source_workdir: sourceWorkdir.trim(),
+        default_ref: profileDefaultRef.trim(),
+        default_version_name: defaultVersionName.trim(),
+        default_version_code: Number(defaultVersionCode),
+        default_channel: profileChannel,
+        build_action: buildAction,
+        commands: parseJSON(commandsText, {}),
+        artifact_rules: parseJSON(artifactRulesText, []),
+        enabled: profileEnabled,
+        metadata: { source: "admin_web", ui: "integration_quick_setup", template: setupTemplateKey },
+      });
+      const routeResp = await upsertWebhookRoute(projectKey, {
+        repository_id: repositoryResp.repository.id,
+        profile_key: routeProfileKey.trim() || profileResp.build_profile.profile_key,
+        event_type: routeEventType,
+        ref_pattern: routeRefPattern.trim(),
+        action: routeAction,
+        enabled: routeEnabled,
+        metadata: { source: "admin_web", ui: "integration_quick_setup", template: setupTemplateKey },
+      });
+      return { projectResp, repositoryResp, profileResp, routeResp };
+    },
+    onSuccess: async (result) => {
+      setRouteRepositoryId(result.repositoryResp.repository.id);
+      setRouteProfileKey(result.profileResp.build_profile.profile_key);
+      setMessage(`已完成基础接入：${result.projectResp.project.project_key} / ${result.repositoryResp.repository.repo_full_name || result.repositoryResp.repository.repo_url}`);
+      setMessageTone("success");
+      await overviewQuery.refetch();
+    },
+    onError: (error) => showConfigError(error, "快速接入失败", setMessage, setMessageTone),
+  });
 
-  const busy = createProjectMutation.isPending || repositoryMutation.isPending || profileMutation.isPending || routeMutation.isPending;
-  const mutationError = createProjectMutation.error || repositoryMutation.error || profileMutation.error || routeMutation.error;
+  const busy = createProjectMutation.isPending || repositoryMutation.isPending || profileMutation.isPending || routeMutation.isPending || quickSetupMutation.isPending;
+  const mutationError = createProjectMutation.error || repositoryMutation.error || profileMutation.error || routeMutation.error || quickSetupMutation.error;
+
+  const applyTemplate = (templateKey: string) => {
+    const template = setupTemplates.find((item) => item.key === templateKey) ?? setupTemplates[0];
+    setSetupTemplateKey(template.key);
+    setRepoProvider(template.provider);
+    setStackType(template.stackType);
+    setBuildType(template.buildType);
+    setBuildAction(template.buildAction);
+    setRouteAction(template.routeAction);
+    setProfileKey(template.profileKey);
+    setRouteProfileKey(template.profileKey);
+    setProfileName(template.profileName);
+    setBuildCenterProject(projectKey.trim() || inferProjectKey(repoFullName || repoURL) || "release-center");
+    setConfigPath(`config/${projectKey.trim() || inferProjectKey(repoFullName || repoURL) || "release-center"}.yml`);
+    setCommandsText(JSON.stringify(applyTemplateTokens(template.commands, projectKey.trim() || inferProjectKey(repoFullName || repoURL) || "release-center"), null, 2));
+    setArtifactRulesText(JSON.stringify(template.artifactRules, null, 2));
+    setMessage(`已套用模板：${template.name}`);
+    setMessageTone("success");
+  };
+
+  const applyRepositoryURL = (value: string) => {
+    setRepoURL(value);
+    const parsed = parseRepositoryURL(value);
+    if (!parsed) return;
+    setRepoProvider(parsed.provider);
+    setRepoFullName(parsed.fullName);
+    const nextProjectKey = inferProjectKey(parsed.fullName);
+    if (nextProjectKey) {
+      setProjectKey(nextProjectKey);
+      setBuildCenterProject(nextProjectKey);
+      setConfigPath(`config/${nextProjectKey}.yml`);
+      setProjectName(toTitle(nextProjectKey));
+      setCredentialRef(`${parsed.provider}_token_${normalizeRef(nextProjectKey)}`);
+      setWebhookSecretRef(`${parsed.provider}_webhook_${normalizeRef(nextProjectKey)}`);
+      setCommandsText(JSON.stringify(applyTemplateTokens(selectedTemplate.commands, nextProjectKey), null, 2));
+    }
+  };
+
+  const useCredentialBestMatch = (kind: "access_token" | "webhook_secret") => {
+    const match = bestCredentialMatch(credentials, repoProvider, kind, projectKey);
+    if (!match) {
+      setMessage(kind === "access_token" ? "没有找到匹配的仓库访问凭证引用。" : "没有找到匹配的 Webhook Secret 引用。");
+      setMessageTone("warning");
+      return;
+    }
+    if (kind === "access_token") setCredentialRef(match.ref);
+    if (kind === "webhook_secret") setWebhookSecretRef(match.ref);
+    setMessage(`已自动选择${kind === "access_token" ? "仓库访问" : "Webhook Secret"}引用：${match.ref}`);
+    setMessageTone(match.configured ? "success" : "warning");
+  };
+
+  const applyProject = (project: BuildCenterProject) => {
+    setProjectKey(project.project_key);
+    setProjectName(project.name);
+    setProjectDescription(project.description || "");
+    setOwnerAccount(project.owner_account || "");
+    setLifecycleStatus(project.lifecycle_status || "active");
+    setDefaultChannel(project.default_channel || "dev");
+    setBuildCenterProject(project.project_key);
+    setConfigPath(`config/${project.project_key}.yml`);
+    setMessage(`已载入项目：${project.project_key}`);
+    setMessageTone("success");
+  };
+
+  const applyRepository = (repository: CodeRepository) => {
+    setRouteRepositoryId(repository.id);
+    setRepoProvider(repository.provider || "generic");
+    setRepoURL(repository.repo_url || "");
+    setRepoFullName(repository.repo_full_name || "");
+    setRepoDefaultRef(repository.default_ref || "main");
+    setProfileDefaultRef(repository.default_ref || "main");
+    setCredentialRef(repository.credential_ref || "");
+    setWebhookSecretRef(repository.webhook_secret_ref || "");
+    setWebhookEnabled(Boolean(repository.webhook_enabled));
+    setTriggerOnPush(Boolean(repository.trigger_on_push));
+    setTriggerOnTag(Boolean(repository.trigger_on_tag));
+    setMessage(`已载入仓库：${repository.repo_full_name || repository.repo_url}`);
+    setMessageTone("success");
+  };
+
+  const applyProfile = (profile: BuildProfile) => {
+    setProfileKey(profile.profile_key);
+    setRouteProfileKey(profile.profile_key);
+    setProfileName(profile.name);
+    setBuildCenterProject(profile.build_center_project);
+    setStackType(profile.stack_type || "generic");
+    setBuildType(profile.build_type || "release");
+    setConfigPath(profile.config_path || "");
+    setSourceWorkdir(profile.source_workdir || "");
+    setProfileDefaultRef(profile.default_ref || "main");
+    setDefaultVersionName(profile.default_version_name || "");
+    setDefaultVersionCode(String(profile.default_version_code || 1));
+    setProfileChannel(profile.default_channel || "dev");
+    setBuildAction(profile.build_action || "all");
+    setProfileEnabled(profile.enabled !== false);
+    setCommandsText(JSON.stringify(profile.commands ?? {}, null, 2));
+    setArtifactRulesText(JSON.stringify(profile.artifact_rules ?? [], null, 2));
+    setMessage(`已载入 Profile：${profile.profile_key}`);
+    setMessageTone("success");
+  };
+
+  const applyRoute = (route: WebhookRoute) => {
+    setRouteRepositoryId(route.repository_id);
+    setRouteProfileKey(route.profile_key || "default");
+    setRouteEventType(route.event_type || "push");
+    setRouteRefPattern(route.ref_pattern || "*");
+    setRouteAction(route.action || "all");
+    setRouteEnabled(Boolean(route.enabled));
+    setMessage(`已载入 Webhook Route：${route.event_type} / ${route.ref_pattern}`);
+    setMessageTone("success");
+  };
 
   return (
     <>
@@ -196,6 +444,113 @@ export function IntegrationConfigPage() {
       {mutationError ? <ApiErrorState error={mutationError} title="集成配置保存失败" /> : null}
 
       <StatusMessage text={message} tone={messageTone} />
+
+      <Card className="my-4">
+        <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
+          <div className="grid gap-4">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <div className="flex items-center gap-2 text-base font-semibold">
+                  <Wand2 className="h-4 w-4" />
+                  快速接入向导
+                </div>
+                <div className="mt-1 text-xs text-muted-foreground">选择模板、粘贴仓库地址，系统会推导项目、Profile、Webhook Route 和凭证引用。</div>
+              </div>
+              <Button
+                onClick={() => quickSetupMutation.mutate()}
+                disabled={busy || !derivedPreview.ready}
+                className="min-w-32"
+              >
+                <Save className="mr-2 h-4 w-4" />
+                一键保存接入
+              </Button>
+            </div>
+
+            <div className="grid gap-3 md:grid-cols-3">
+              {setupTemplates.map((template) => (
+                <button
+                  key={template.key}
+                  className={`rounded-lg border p-3 text-left transition hover:bg-muted ${
+                    setupTemplateKey === template.key ? "border-black bg-muted" : "bg-white"
+                  }`}
+                  type="button"
+                  onClick={() => applyTemplate(template.key)}
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-sm font-medium">{template.name}</span>
+                    {setupTemplateKey === template.key ? <CheckCircle2 className="h-4 w-4" /> : null}
+                  </div>
+                  <div className="mt-2 text-xs text-muted-foreground">{template.stackType} / {template.buildType} / {template.buildAction}</div>
+                </button>
+              ))}
+            </div>
+
+            <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_220px]">
+              <div className="grid gap-2">
+                <label className="text-xs font-medium text-muted-foreground">仓库地址</label>
+                <Input
+                  placeholder="https://github.com/owner/repo 或 git@github.com:owner/repo.git"
+                  value={repoURL}
+                  onChange={(event) => applyRepositoryURL(event.target.value)}
+                />
+              </div>
+              <div className="grid gap-2">
+                <label className="text-xs font-medium text-muted-foreground">默认分支</label>
+                <Input value={repoDefaultRef} onChange={(event) => {
+                  setRepoDefaultRef(event.target.value);
+                  setProfileDefaultRef(event.target.value);
+                  setRouteRefPattern(refPatternFromBranch(event.target.value, routeEventType));
+                }} />
+              </div>
+            </div>
+
+            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+              <QuickField label="项目" value={`${projectKey} / ${projectName}`} />
+              <QuickField label="仓库" value={`${repoProvider}:${repoFullName || repoURL}`} />
+              <QuickField label="Profile" value={`${profileKey} / ${stackType} / ${buildAction}`} />
+              <QuickField label="Route" value={`${routeEventType} / ${routeRefPattern} / ${routeEnabled ? "enabled" : "disabled"}`} />
+            </div>
+
+            <div className="grid gap-3 lg:grid-cols-2">
+              <div className="rounded-lg border p-3">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="text-xs font-medium">凭证引用</div>
+                  <div className="flex gap-2">
+                    <Button type="button" size="sm" variant="secondary" onClick={() => useCredentialBestMatch("access_token")}>匹配 Token</Button>
+                    <Button type="button" size="sm" variant="secondary" onClick={() => useCredentialBestMatch("webhook_secret")}>匹配 Secret</Button>
+                  </div>
+                </div>
+                <div className="mt-3 grid gap-2 text-xs">
+                  <Info label="仓库 Token" value={credentialRef || "-"} />
+                  <Info label="Webhook Secret" value={webhookSecretRef || "-"} />
+                  <Info label="已配置引用" value={`${credentials.filter((item) => item.configured).length}/${credentials.length}`} />
+                </div>
+              </div>
+              <div className="rounded-lg border p-3">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="text-xs font-medium">Webhook 配置</div>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="secondary"
+                    onClick={() => copyText(webhookEndpointFor(repoProvider))}
+                  >
+                    <Copy className="mr-1 h-3.5 w-3.5" />
+                    复制地址
+                  </Button>
+                </div>
+                <div className="mt-3 grid gap-2 text-xs">
+                  <Info label="Payload URL" value={webhookEndpointFor(repoProvider)} />
+                  <Info label="Content type" value="application/json" />
+                  <Info label="启用策略" value={routeEnabled ? "Route 已启用" : "先保存为 disabled，真实 secret 配好后再启用"} />
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <SetupChecklist items={derivedPreview.items} ready={derivedPreview.ready} />
+        </div>
+      </Card>
 
       <div className="my-4 grid gap-3 md:grid-cols-4">
         <Metric label="项目" value={metrics.projects} note={`${metrics.activeProjects} 个 active`} icon={GitBranch} />
@@ -325,7 +680,15 @@ export function IntegrationConfigPage() {
                 options={unique(["default", ...profiles.map((profile) => profile.profile_key)])}
               />
               <div className="grid grid-cols-2 gap-2">
-                <Select label="事件" value={routeEventType} onChange={setRouteEventType} options={eventOptions} />
+                <Select
+                  label="事件"
+                  value={routeEventType}
+                  onChange={(value) => {
+                    setRouteEventType(value);
+                    setRouteRefPattern(refPatternFromBranch(repoDefaultRef, value));
+                  }}
+                  options={eventOptions}
+                />
                 <Select label="动作" value={routeAction} onChange={setRouteAction} options={actionOptions} />
               </div>
               <Input placeholder="ref pattern" value={routeRefPattern} onChange={(event) => setRouteRefPattern(event.target.value)} />
@@ -339,28 +702,33 @@ export function IntegrationConfigPage() {
         </div>
 
         <div className="grid gap-4">
-          <ProjectSummary project={selectedProject} />
-          <EntityList title="代码仓库" items={repositories} renderItem={(repository) => <RepositoryItem repository={repository} />} />
-          <EntityList title="构建 Profile" items={profiles} renderItem={(profile) => <ProfileItem profile={profile} />} />
-          <EntityList title="Webhook Route" items={routes} renderItem={(route) => <RouteItem route={route} repositories={repositories} />} />
+          <ProjectSummary project={selectedProject} onUse={applyProject} />
+          <EntityList title="代码仓库" items={repositories} renderItem={(repository) => <RepositoryItem repository={repository} onUse={applyRepository} />} />
+          <EntityList title="构建 Profile" items={profiles} renderItem={(profile) => <ProfileItem profile={profile} onUse={applyProfile} />} />
+          <EntityList title="Webhook Route" items={routes} renderItem={(route) => <RouteItem route={route} repositories={repositories} onUse={applyRoute} />} />
         </div>
       </div>
     </>
   );
 }
 
-function ProjectSummary({ project }: { project?: BuildCenterProject }) {
+function ProjectSummary({ project, onUse }: { project?: BuildCenterProject; onUse: (project: BuildCenterProject) => void }) {
   return (
     <Card>
       <SectionTitle title="项目概览" badge={project?.project_key || "未选择"} />
       {project ? (
-        <div className="grid gap-2 text-xs md:grid-cols-2">
-          <Info label="名称" value={project.name} />
-          <Info label="Owner" value={project.owner_account || "-"} />
-          <Info label="状态" value={project.lifecycle_status || "-"} />
-          <Info label="渠道" value={project.default_channel || "-"} />
-          <Info label="更新时间" value={formatDateTime(project.updated_at)} />
-          <Info label="描述" value={project.description || "-"} />
+        <div className="grid gap-3">
+          <div className="grid gap-2 text-xs md:grid-cols-2">
+            <Info label="名称" value={project.name} />
+            <Info label="Owner" value={project.owner_account || "-"} />
+            <Info label="状态" value={project.lifecycle_status || "-"} />
+            <Info label="渠道" value={project.default_channel || "-"} />
+            <Info label="更新时间" value={formatDateTime(project.updated_at)} />
+            <Info label="描述" value={project.description || "-"} />
+          </div>
+          <Button type="button" size="sm" variant="secondary" onClick={() => onUse(project)}>
+            载入项目
+          </Button>
         </div>
       ) : (
         <EmptyBox text="暂无项目" />
@@ -418,7 +786,7 @@ function CredentialReferencePanel({ credentials, onUse }: { credentials: Integra
   );
 }
 
-function RepositoryItem({ repository }: { repository: CodeRepository }) {
+function RepositoryItem({ repository, onUse }: { repository: CodeRepository; onUse: (repository: CodeRepository) => void }) {
   return (
     <div className="rounded-lg border p-3 text-xs">
       <div className="flex items-start justify-between gap-3">
@@ -433,11 +801,14 @@ function RepositoryItem({ repository }: { repository: CodeRepository }) {
         <Info label="凭证" value={repository.credential_ref || "-"} />
         <Info label="触发" value={[repository.trigger_on_push ? "push" : "", repository.trigger_on_tag ? "tag" : ""].filter(Boolean).join(" / ") || "-"} />
       </div>
+      <Button type="button" className="mt-2 w-full" size="sm" variant="secondary" onClick={() => onUse(repository)}>
+        载入编辑
+      </Button>
     </div>
   );
 }
 
-function ProfileItem({ profile }: { profile: BuildProfile }) {
+function ProfileItem({ profile, onUse }: { profile: BuildProfile; onUse: (profile: BuildProfile) => void }) {
   return (
     <div className="rounded-lg border p-3 text-xs">
       <div className="flex items-start justify-between gap-3">
@@ -452,11 +823,14 @@ function ProfileItem({ profile }: { profile: BuildProfile }) {
         <Info label="动作" value={profile.build_action || "all"} />
         <Info label="版本" value={`${profile.default_version_name || "-"} / ${profile.default_channel || "-"}`} />
       </div>
+      <Button type="button" className="mt-2 w-full" size="sm" variant="secondary" onClick={() => onUse(profile)}>
+        载入编辑
+      </Button>
     </div>
   );
 }
 
-function RouteItem({ route, repositories }: { route: WebhookRoute; repositories: CodeRepository[] }) {
+function RouteItem({ route, repositories, onUse }: { route: WebhookRoute; repositories: CodeRepository[]; onUse: (route: WebhookRoute) => void }) {
   const repository = repositories.find((item) => item.id === route.repository_id);
   return (
     <div className="rounded-lg border p-3 text-xs">
@@ -470,6 +844,43 @@ function RouteItem({ route, repositories }: { route: WebhookRoute; repositories:
       <div className="mt-2 grid gap-1">
         <Info label="Profile" value={route.profile_key || route.build_profile_id || "default"} />
         <Info label="更新时间" value={formatDateTime(route.updated_at)} />
+      </div>
+      <Button type="button" className="mt-2 w-full" size="sm" variant="secondary" onClick={() => onUse(route)}>
+        载入编辑
+      </Button>
+    </div>
+  );
+}
+
+function QuickField({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-lg border bg-muted p-3">
+      <div className="text-[11px] text-muted-foreground">{label}</div>
+      <div className="mt-1 break-all text-xs font-medium">{value || "-"}</div>
+    </div>
+  );
+}
+
+function SetupChecklist({ items, ready }: { items: Array<{ label: string; ok: boolean; note: string }>; ready: boolean }) {
+  return (
+    <div className="rounded-lg border p-3">
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <div className="font-medium">接入预检</div>
+        <Badge tone={ready ? "success" : "warning"}>{ready ? "可保存" : "需补齐"}</Badge>
+      </div>
+      <div className="grid gap-2">
+        {items.map((item) => (
+          <div key={item.label} className="flex items-start gap-2 rounded-md border p-2 text-xs">
+            <CheckCircle2 className={`mt-0.5 h-3.5 w-3.5 shrink-0 ${item.ok ? "text-emerald-600" : "text-muted-foreground"}`} />
+            <div className="min-w-0">
+              <div className="font-medium">{item.label}</div>
+              <div className="mt-0.5 text-muted-foreground">{item.note}</div>
+            </div>
+          </div>
+        ))}
+      </div>
+      <div className="mt-3 rounded-md bg-muted p-2 text-[11px] text-muted-foreground">
+        Secret 和 Token 只保存引用名；真实值仍放在服务器或 Worker 环境变量中。
       </div>
     </div>
   );
@@ -598,6 +1009,144 @@ function parseJSON(value: string, fallback: unknown) {
 
 function unique(values: string[]) {
   return Array.from(new Set(values.filter(Boolean)));
+}
+
+function parseRepositoryURL(value: string) {
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  const sshMatch = trimmed.match(/^git@([^:]+):(.+?)(?:\.git)?$/);
+  if (sshMatch) {
+    return {
+      provider: providerFromHost(sshMatch[1]),
+      fullName: sshMatch[2].replace(/\.git$/, ""),
+    };
+  }
+  try {
+    const url = new URL(trimmed);
+    const path = url.pathname.replace(/^\/+/, "").replace(/\.git$/, "");
+    if (!path.includes("/")) return null;
+    return {
+      provider: providerFromHost(url.hostname),
+      fullName: path,
+    };
+  } catch {
+    const plain = trimmed.replace(/\.git$/, "");
+    if (!plain.includes("/")) return null;
+    return { provider: "generic", fullName: plain };
+  }
+}
+
+function providerFromHost(host: string) {
+  const normalized = host.toLowerCase();
+  if (normalized.includes("github")) return "github";
+  if (normalized.includes("gitea")) return "gitea";
+  if (normalized.includes("gitlab")) return "gitlab";
+  return "generic";
+}
+
+function inferProjectKey(value: string) {
+  const source = value.trim().split("/").filter(Boolean).pop() || "";
+  return normalizeRef(source);
+}
+
+function normalizeRef(value: string) {
+  return value
+    .trim()
+    .replace(/\.git$/, "")
+    .replace(/([a-z0-9])([A-Z])/g, "$1-$2")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
+function toTitle(value: string) {
+  return value
+    .split("-")
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+}
+
+function refPatternFromBranch(branch: string, eventType: string) {
+  const normalized = branch.trim() || "main";
+  if (eventType === "tag") return "refs/tags/*";
+  if (eventType === "*") return "*";
+  return normalized.startsWith("refs/") ? normalized : `refs/heads/${normalized}`;
+}
+
+function applyTemplateTokens(value: unknown, projectKey: string) {
+  return JSON.parse(JSON.stringify(value).replace(/\{\{projectKey\}\}/g, projectKey));
+}
+
+function bestCredentialMatch(credentials: IntegrationCredentialStatus[], provider: string, kind: string, projectKey: string) {
+  const candidates = credentials.filter((credential) => credential.provider === provider && credential.kind === kind);
+  return (
+    candidates.find((credential) => credential.configured && credential.ref.includes(projectKey)) ||
+    candidates.find((credential) => credential.configured) ||
+    candidates.find((credential) => credential.ref.includes(projectKey)) ||
+    candidates[0]
+  );
+}
+
+function webhookEndpointFor(provider: string) {
+  if (provider === "gitea") return "/api/v1/webhooks/gitea";
+  return "/api/v1/webhooks/github";
+}
+
+function buildDerivedPreview(input: {
+  projectKey: string;
+  repoProvider: string;
+  repoURL: string;
+  repoFullName: string;
+  repoDefaultRef: string;
+  credentialRef: string;
+  webhookSecretRef: string;
+  profileKey: string;
+  stackType: string;
+  buildAction: string;
+  routeEventType: string;
+  routeRefPattern: string;
+  routeEnabled: boolean;
+}) {
+  const items = [
+    {
+      label: "项目标识",
+      ok: Boolean(input.projectKey.trim()),
+      note: input.projectKey.trim() ? input.projectKey : "需要 project key",
+    },
+    {
+      label: "仓库地址",
+      ok: Boolean(input.repoURL.trim() && (input.repoFullName.trim() || parseRepositoryURL(input.repoURL))),
+      note: input.repoFullName || "粘贴 Git URL 后自动解析 owner/repo",
+    },
+    {
+      label: "构建模板",
+      ok: Boolean(input.profileKey.trim() && input.stackType.trim() && input.buildAction.trim()),
+      note: `${input.profileKey || "-"} / ${input.stackType || "-"} / ${input.buildAction || "-"}`,
+    },
+    {
+      label: "默认分支",
+      ok: Boolean(input.repoDefaultRef.trim()),
+      note: input.repoDefaultRef || "需要默认分支",
+    },
+    {
+      label: "凭证引用",
+      ok: Boolean(input.credentialRef.trim() || input.webhookSecretRef.trim()),
+      note: input.credentialRef || input.webhookSecretRef || "可先保存引用名，真实值放环境变量",
+    },
+    {
+      label: "Webhook Route",
+      ok: Boolean(input.routeEventType.trim() && input.routeRefPattern.trim()),
+      note: `${input.routeEventType || "-"} / ${input.routeRefPattern || "-"} / ${input.routeEnabled ? "enabled" : "disabled"}`,
+    },
+  ];
+  return { items, ready: items.slice(0, 4).every((item) => item.ok) };
+}
+
+function copyText(value: string) {
+  if (typeof navigator !== "undefined" && navigator.clipboard) {
+    void navigator.clipboard.writeText(value);
+  }
 }
 
 function showConfigError(

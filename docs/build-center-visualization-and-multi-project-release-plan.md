@@ -71,6 +71,18 @@ uploaded
 
 APK 更新检查继续保留为 Android 发布单元的运行入口。
 
+### 集成配置页面
+
+集成配置不能让用户从空白字段开始手填。当前页面已改为“快速接入向导 + 高级编辑”的组合：
+
+- 首屏选择 GitHub Web、GitHub Go 服务、GitHub Android 模板。
+- 粘贴 HTTPS 或 SSH 仓库地址后自动解析 provider、owner/repo、project key、项目名称、config path、credential ref 和 webhook secret ref。
+- 模板自动生成 build profile、buildctl 命令、artifact rules、Webhook route action 和 ref pattern。
+- 页面提供接入预检，明确项目、仓库、Profile、默认分支、凭证引用、Webhook route 哪些已就绪。
+- 支持自动匹配已配置的 credential ref / webhook secret ref，只展示引用名，不展示密钥明文。
+- 一键保存会顺序 upsert 项目、仓库、profile 和 route；route 默认可保持 disabled，等真实 secret 和外部 webhook 配置完成后再启用。
+- 已有项目、仓库、profile、route 列表提供“载入编辑”，避免维护时重复复制字段。
+
 ## 3. 数据模型
 
 已落库的第 4 号 migration 覆盖轻量接入基础表：
