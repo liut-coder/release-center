@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import { useMemo, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { CheckCircle2, Copy, GitBranch, Hammer, KeyRound, RefreshCw, Save, Wand2, Webhook } from "lucide-react";
+import { CheckCircle2, Copy, ExternalLink, GitBranch, Hammer, KeyRound, RefreshCw, Save, Wand2, Webhook } from "lucide-react";
 import { getAdminIdentity } from "@/api/client";
 import {
   createBuildCenterProject,
@@ -139,7 +139,39 @@ export function IntegrationConfigPage() {
   const routes = selectedProject?.webhook_routes ?? [];
   const metrics = useMemo(() => integrationMetrics(projects), [projects]);
   const effectiveRepositoryId = routeRepositoryId || repositories[0]?.id || "";
+  const selectedRepository = useMemo(
+    () => repositories.find((repository) => repository.id === effectiveRepositoryId) ?? repositories[0],
+    [effectiveRepositoryId, repositories],
+  );
+  const selectedProfile = useMemo(
+    () => profiles.find((profile) => profile.profile_key === routeProfileKey || profile.profile_key === profileKey) ?? profiles[0],
+    [profileKey, profiles, routeProfileKey],
+  );
+  const selectedRoute = useMemo(
+    () =>
+      routes.find((route) => route.repository_id === effectiveRepositoryId && (route.profile_key === routeProfileKey || route.profile_key === profileKey)) ??
+      routes[0],
+    [effectiveRepositoryId, profileKey, routeProfileKey, routes],
+  );
   const selectedTemplate = setupTemplates.find((template) => template.key === setupTemplateKey) ?? setupTemplates[0];
+  const webhookPayloadURL = webhookEndpointAbsolute(repoProvider);
+  const webhookSettingsURL = repositoryWebhookSettingsURL(repoProvider, repoFullName || selectedRepository?.repo_full_name || repoURL);
+  const closurePreview = useMemo(
+    () =>
+      buildIntegrationClosure({
+        project: selectedProject,
+        repository: selectedRepository,
+        profile: selectedProfile,
+        route: selectedRoute,
+        credentialRef,
+        webhookSecretRef,
+        triggerOnPush,
+        triggerOnTag,
+        routeEnabled,
+        webhookEnabled,
+      }),
+    [credentialRef, routeEnabled, selectedProfile, selectedProject, selectedRepository, selectedRoute, triggerOnPush, triggerOnTag, webhookEnabled, webhookSecretRef],
+  );
   const derivedPreview = useMemo(
     () =>
       buildDerivedPreview({
@@ -559,6 +591,35 @@ export function IntegrationConfigPage() {
         </div>
       </Card>
 
+      <IntegrationClosurePanel
+        items={closurePreview.items}
+        payloadURL={webhookPayloadURL}
+        secretRef={webhookSecretRef || selectedRepository?.webhook_secret_ref || "-"}
+        events={[triggerOnPush || selectedRepository?.trigger_on_push ? "push" : "", triggerOnTag || selectedRepository?.trigger_on_tag ? "tag" : ""].filter(Boolean)}
+        refPattern={selectedRoute?.ref_pattern || routeRefPattern}
+        routeEnabled={Boolean(selectedRoute?.enabled || routeEnabled)}
+        settingsURL={webhookSettingsURL}
+        onCopyPayload={() => {
+          copyText(webhookPayloadURL);
+          setMessage("Webhook Payload URL 已复制");
+          setMessageTone("success");
+        }}
+        onCopySecret={() => {
+          copyText(webhookSecretRef || selectedRepository?.webhook_secret_ref || "");
+          setMessage("Webhook Secret 引用已复制");
+          setMessageTone("success");
+        }}
+        onEnableRecommended={() => {
+          setWebhookEnabled(true);
+          setTriggerOnPush(true);
+          setRouteEnabled(true);
+          setRouteEventType("push");
+          setRouteRefPattern(refPatternFromBranch(repoDefaultRef, "push"));
+          setMessage("已切换为推荐的 push webhook 接入配置，保存仓库和 Route 后生效。");
+          setMessageTone("success");
+        }}
+      />
+
       <div className="my-4 grid gap-3 md:grid-cols-4">
         <Metric label="项目" value={metrics.projects} note={`${metrics.activeProjects} 个 active`} icon={GitBranch} />
         <Metric label="仓库" value={metrics.repositories} note={`${metrics.githubRepositories} 个 GitHub`} icon={GitBranch} />
@@ -893,6 +954,96 @@ function SetupChecklist({ items, ready }: { items: Array<{ label: string; ok: bo
   );
 }
 
+function IntegrationClosurePanel({
+  items,
+  payloadURL,
+  secretRef,
+  events,
+  refPattern,
+  routeEnabled,
+  settingsURL,
+  onCopyPayload,
+  onCopySecret,
+  onEnableRecommended,
+}: {
+  items: Array<{ label: string; ok: boolean; note: string }>;
+  payloadURL: string;
+  secretRef: string;
+  events: string[];
+  refPattern: string;
+  routeEnabled: boolean;
+  settingsURL: string;
+  onCopyPayload: () => void;
+  onCopySecret: () => void;
+  onEnableRecommended: () => void;
+}) {
+  const readyCount = items.filter((item) => item.ok).length;
+  const allReady = readyCount === items.length;
+  return (
+    <Card className="my-4">
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
+        <div className="grid gap-3">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <div className="flex items-center gap-2 font-semibold">
+                <Webhook className="h-4 w-4" />
+                外部接入闭环
+              </div>
+              <div className="mt-1 text-xs text-muted-foreground">保存配置后，按这里把外部仓库 webhook 配完，再用 push/tag 触发构建。</div>
+            </div>
+            <Badge tone={allReady ? "success" : "warning"}>{readyCount}/{items.length} 就绪</Badge>
+          </div>
+          <div className="grid gap-3 md:grid-cols-2">
+            <WebhookSetupField label="Payload URL" value={payloadURL} onCopy={onCopyPayload} />
+            <WebhookSetupField label="Secret 引用" value={secretRef} onCopy={onCopySecret} />
+            <QuickField label="Content type" value="application/json" />
+            <QuickField label="触发事件" value={events.length ? events.join(" / ") : "未启用"} />
+            <QuickField label="Ref Pattern" value={refPattern || "-"} />
+            <QuickField label="Route 状态" value={routeEnabled ? "enabled" : "disabled"} />
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Button type="button" variant="secondary" onClick={onEnableRecommended}>
+              <Webhook className="mr-2 h-4 w-4" />
+              使用 push 推荐配置
+            </Button>
+            {settingsURL ? (
+              <Button type="button" variant="secondary" onClick={() => window.open(settingsURL, "_blank", "noopener,noreferrer")}>
+                <ExternalLink className="mr-2 h-4 w-4" />
+                打开仓库 Webhooks
+              </Button>
+            ) : null}
+          </div>
+        </div>
+        <div className="grid gap-2">
+          {items.map((item) => (
+            <div key={item.label} className="flex items-start gap-2 rounded-lg border p-2 text-xs">
+              <CheckCircle2 className={`mt-0.5 h-3.5 w-3.5 shrink-0 ${item.ok ? "text-emerald-600" : "text-muted-foreground"}`} />
+              <div className="min-w-0">
+                <div className="font-medium">{item.label}</div>
+                <div className="mt-0.5 text-muted-foreground">{item.note}</div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </Card>
+  );
+}
+
+function WebhookSetupField({ label, value, onCopy }: { label: string; value: string; onCopy: () => void }) {
+  return (
+    <div className="rounded-lg border bg-muted p-3">
+      <div className="mb-1 text-[11px] text-muted-foreground">{label}</div>
+      <div className="flex items-center gap-2">
+        <span className="min-w-0 flex-1 break-all font-mono text-xs font-medium">{value || "-"}</span>
+        <Button type="button" size="icon" variant="secondary" onClick={onCopy} title={`复制${label}`} disabled={!value || value === "-"}>
+          <Copy className="h-3.5 w-3.5" />
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 function Metric({ label, value, note, icon: Icon }: { label: string; value: string | number; note: string; icon: typeof GitBranch }) {
   return (
     <div className="rounded-lg border bg-white p-3">
@@ -1098,6 +1249,78 @@ function bestCredentialMatch(credentials: IntegrationCredentialStatus[], provide
 function webhookEndpointFor(provider: string) {
   if (provider === "gitea") return "/api/v1/webhooks/gitea";
   return "/api/v1/webhooks/github";
+}
+
+function webhookEndpointAbsolute(provider: string) {
+  const path = webhookEndpointFor(provider);
+  if (typeof window === "undefined") return path;
+  return `${window.location.origin}${path}`;
+}
+
+function repositoryWebhookSettingsURL(provider: string, fullNameOrURL: string) {
+  const parsed = parseRepositoryURL(fullNameOrURL);
+  const fullName = parsed?.fullName || fullNameOrURL.trim().replace(/^https?:\/\/[^/]+\//, "").replace(/\.git$/, "");
+  if (!fullName.includes("/")) return "";
+  if (provider === "github") return `https://github.com/${fullName}/settings/hooks`;
+  if (provider === "gitlab") return `https://gitlab.com/${fullName}/-/hooks`;
+  return "";
+}
+
+function buildIntegrationClosure(input: {
+  project?: BuildCenterProject;
+  repository?: CodeRepository;
+  profile?: BuildProfile;
+  route?: WebhookRoute;
+  credentialRef: string;
+  webhookSecretRef: string;
+  triggerOnPush: boolean;
+  triggerOnTag: boolean;
+  routeEnabled: boolean;
+  webhookEnabled: boolean;
+}) {
+  const repositoryCredential = input.repository?.credential_ref || input.credentialRef;
+  const repositorySecret = input.repository?.webhook_secret_ref || input.webhookSecretRef;
+  const webhookEnabled = Boolean(input.repository?.webhook_enabled || input.webhookEnabled);
+  const routeEnabled = Boolean(input.route?.enabled || input.routeEnabled);
+  const hasTrigger = Boolean(input.repository?.trigger_on_push || input.repository?.trigger_on_tag || input.triggerOnPush || input.triggerOnTag);
+  const items = [
+    {
+      label: "项目已保存",
+      ok: Boolean(input.project?.id),
+      note: input.project?.project_key || "先保存项目",
+    },
+    {
+      label: "仓库已绑定",
+      ok: Boolean(input.repository?.id),
+      note: input.repository?.repo_full_name || input.repository?.repo_url || "先保存 Git 仓库",
+    },
+    {
+      label: "构建 Profile 已保存",
+      ok: Boolean(input.profile?.id),
+      note: input.profile ? `${input.profile.profile_key} / ${input.profile.build_action || "all"}` : "先保存构建 Profile",
+    },
+    {
+      label: "凭证引用已填写",
+      ok: Boolean(repositoryCredential),
+      note: repositoryCredential || "填写 credential_ref，仅保存引用名",
+    },
+    {
+      label: "Webhook Secret 引用已填写",
+      ok: Boolean(repositorySecret),
+      note: repositorySecret || "填写 webhook_secret_ref，仅保存引用名",
+    },
+    {
+      label: "仓库 Webhook 已启用",
+      ok: webhookEnabled && hasTrigger,
+      note: webhookEnabled ? (hasTrigger ? "push/tag 触发已配置" : "请选择 push 或 tag 触发") : "开启仓库 Webhook 开关",
+    },
+    {
+      label: "Route 已启用",
+      ok: routeEnabled && Boolean(input.route?.id),
+      note: input.route ? `${input.route.event_type} / ${input.route.ref_pattern}` : "保存并启用 Webhook Route",
+    },
+  ];
+  return { items };
 }
 
 function buildDerivedPreview(input: {

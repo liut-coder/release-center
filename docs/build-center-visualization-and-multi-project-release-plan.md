@@ -82,6 +82,7 @@ APK 更新检查继续保留为 Android 发布单元的运行入口。
 - 支持自动匹配已配置的 credential ref / webhook secret ref，只展示引用名，不展示密钥明文。
 - 一键保存会顺序 upsert 项目、仓库、profile 和 route；route 默认可保持 disabled，等真实 secret 和外部 webhook 配置完成后再启用。
 - 已有项目、仓库、profile、route 列表提供“载入编辑”，避免维护时重复复制字段。
+- 保存后继续显示外部接入闭环面板，按项目、仓库、profile、credential ref、webhook secret ref、仓库 webhook、route 逐项标记就绪状态，并给出 Payload URL、Secret 引用、触发事件、ref pattern、route 状态、复制按钮和 GitHub Webhooks 设置入口。
 
 ## 3. 数据模型
 
