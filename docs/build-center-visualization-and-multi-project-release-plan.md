@@ -561,4 +561,4 @@ origin=https://github.com/liut-coder/release-center.git
 - GitHub 接入验收：配置 webhook secret/route enable，完成 push/tag 自动创建构建任务的真实仓库 smoke。
 - Android 发布单元迁移：旧 APK 发布接口已开始镜像 Android release unit/release plan；下一步把前端 APK 发布页收敛进统一发布计划工作台。
 - 审批/RBAC：构建/发布/部署权限拦截和角色权限矩阵验收。
-- 回滚执行闭环：部署记录回滚和 release plan 回滚计划生成已落地；下一步补前端目标选择和真实生产回滚演练。
+- 回滚执行闭环：部署记录回滚、release plan 回滚计划生成和前端回滚目标选择已落地；下一步做真实生产回滚演练。

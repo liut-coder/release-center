@@ -54,7 +54,7 @@ const targetTypeOptions = [
 const rolloutOptions = ["5", "10", "20", "50", "100"];
 const channelOptions = ["dev", "internal", "beta", "stable", "emergency"];
 
-type PlanAction = "publish" | "pause" | "rollback";
+type PlanAction = "publish" | "pause" | "rollback" | "rollback_deploy";
 
 export function ReleasePlansPanel() {
   const [projectKey, setProjectKey] = useState("release-center");
@@ -191,8 +191,12 @@ export function ReleasePlansPanel() {
   });
   const planActionMutation = useMutation({
     mutationFn: ({ plan, action }: { plan: ReleasePlan; action: PlanAction }) => {
+      if (action === "rollback_deploy" && !effectiveDeploymentTargetId) throw new Error("请选择部署目标");
       const payload = {
         approved_by: "admin-web",
+        target_id: action === "rollback_deploy" ? effectiveDeploymentTargetId : undefined,
+        dry_run: action === "rollback_deploy" ? deploymentDryRun : undefined,
+        triggered_by: action === "rollback_deploy" ? "admin-web" : undefined,
         metadata: { source: "admin_web", action },
       };
       if (action === "publish") return publishReleasePlan(plan.id, payload);
@@ -200,7 +204,8 @@ export function ReleasePlansPanel() {
       return rollbackReleasePlan(plan.id, payload);
     },
     onSuccess: async (result) => {
-      setMessage(result.message_zh || "发布计划状态已更新");
+      const rollbackSuffix = result.rollback_plan?.plan_key ? `：${result.rollback_plan.plan_key}` : "";
+      setMessage(result.message_zh || `发布计划状态已更新${rollbackSuffix}`);
       setMessageTone("success");
       await overviewQuery.refetch();
     },
@@ -561,19 +566,19 @@ function PlanMatrixCell({ plan }: { plan?: ReleasePlan }) {
 }
 
 function ReleasePlanList({
-	plans,
-	busy,
-	deploymentTargetId,
-	deploymentDryRun,
-	onAction,
-	onDeploy,
+  plans,
+  busy,
+  deploymentTargetId,
+  deploymentDryRun,
+  onAction,
+  onDeploy,
 }: {
-	plans: ReleasePlan[];
-	busy: boolean;
-	deploymentTargetId: string;
-	deploymentDryRun: boolean;
-	onAction: (plan: ReleasePlan, action: PlanAction) => void;
-	onDeploy: (plan: ReleasePlan) => void;
+  plans: ReleasePlan[];
+  busy: boolean;
+  deploymentTargetId: string;
+  deploymentDryRun: boolean;
+  onAction: (plan: ReleasePlan, action: PlanAction) => void;
+  onDeploy: (plan: ReleasePlan) => void;
 }) {
   return (
     <div className="grid gap-3">
@@ -602,16 +607,25 @@ function ReleasePlanList({
                   <PauseCircle className="mr-2 h-3.5 w-3.5" />
                   暂停
                 </Button>
-				<Button variant="secondary" size="sm" onClick={() => onAction(plan, "rollback")} disabled={busy || plan.status === "rolled_back"}>
-					<History className="mr-2 h-3.5 w-3.5" />
-					回滚
-				</Button>
-				<Button variant="secondary" size="sm" onClick={() => onDeploy(plan)} disabled={busy || !deploymentTargetId || !(plan.artifacts?.length)}>
-					<Cloud className="mr-2 h-3.5 w-3.5" />
-					{deploymentDryRun ? "部署" : "投递"}
-				</Button>
-			</div>
-		</div>
+                <Button variant="secondary" size="sm" onClick={() => onAction(plan, "rollback")} disabled={busy || plan.status === "rolled_back"}>
+                  <History className="mr-2 h-3.5 w-3.5" />
+                  回滚计划
+                </Button>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => onAction(plan, "rollback_deploy")}
+                  disabled={busy || !deploymentTargetId || plan.status === "rolled_back"}
+                >
+                  <History className="mr-2 h-3.5 w-3.5" />
+                  {deploymentDryRun ? "回滚部署" : "回滚投递"}
+                </Button>
+                <Button variant="secondary" size="sm" onClick={() => onDeploy(plan)} disabled={busy || !deploymentTargetId || !(plan.artifacts?.length)}>
+                  <Cloud className="mr-2 h-3.5 w-3.5" />
+                  {deploymentDryRun ? "部署" : "投递"}
+                </Button>
+              </div>
+            </div>
             <div className="mt-3 grid gap-2 text-xs md:grid-cols-4">
               <Info label="版本" value={plan.version_name || "-"} />
               <Info label="build" value={String(plan.build_number ?? "-")} />
