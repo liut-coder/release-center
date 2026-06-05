@@ -316,6 +316,7 @@ GitHub Actions 仍然可作为外部 CI 使用。外部 CI 构建完成后直接
 - `cmd/server` 已接入 GitHub/Gitea webhook HMAC 签名校验中间件；配置 secret 后才放行真实 webhook 请求。
 - Admin API 已支持保存 `release_projects`、`code_repositories`、`build_profiles` 和 `webhook_routes`，用于后台接入 GitHub 仓库和构建 profile。
 - Admin 前端新增集成配置页面，支持维护项目、Git 仓库、构建 profile、Webhook route 和对应 credential/secret 引用。
+- Admin 前端集成配置页新增凭证引用面板，只展示 credential ref、推荐环境变量名和配置状态，不保存或返回明文 token。
 - 第 5 号 migration 已预置 release-center 的 main push 和 tag route，但默认 disabled；配置 GitHub secret/认证后再开启仓库和 route。
 
 Webhook secret 环境变量：

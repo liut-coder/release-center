@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import { useMemo, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { GitBranch, Hammer, RefreshCw, Save, Webhook } from "lucide-react";
+import { GitBranch, Hammer, KeyRound, RefreshCw, Save, Webhook } from "lucide-react";
 import {
   createBuildCenterProject,
   getBuildCenterOverview,
@@ -13,6 +13,7 @@ import {
   type CodeRepository,
   type WebhookRoute,
 } from "@/api/buildCenter";
+import { getIntegrationCredentials, type IntegrationCredentialStatus } from "@/api/integrationCredentials";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { ApiErrorState } from "@/components/stable/StableAdminComponents";
 import { Badge } from "@/components/ui/Badge";
@@ -77,8 +78,13 @@ export function IntegrationConfigPage() {
     queryKey: ["integration-config-overview"],
     queryFn: getBuildCenterOverview,
   });
+  const credentialsQuery = useQuery({
+    queryKey: ["integration-credentials"],
+    queryFn: getIntegrationCredentials,
+  });
 
   const projects = overviewQuery.data?.projects ?? [];
+  const credentials = credentialsQuery.data?.credentials ?? [];
   const selectedProject = useMemo(() => projects.find((project) => project.project_key === projectKey), [projectKey, projects]);
   const repositories = selectedProject?.repositories ?? [];
   const profiles = selectedProject?.build_profiles ?? [];
@@ -186,6 +192,7 @@ export function IntegrationConfigPage() {
       </PageHeader>
 
       {overviewQuery.isError ? <ApiErrorState error={overviewQuery.error} title="集成配置读取失败" /> : null}
+      {credentialsQuery.isError ? <ApiErrorState error={credentialsQuery.error} title="凭证引用读取失败" /> : null}
       {mutationError ? <ApiErrorState error={mutationError} title="集成配置保存失败" /> : null}
 
       <StatusMessage text={message} tone={messageTone} />
@@ -240,6 +247,28 @@ export function IntegrationConfigPage() {
               </Button>
             </div>
           </Card>
+
+          <CredentialReferencePanel
+            credentials={credentials}
+            onUse={(credential) => {
+              if (credential.provider === "github" && credential.kind === "access_token") {
+                setCredentialRef(credential.ref);
+                setRepoProvider("github");
+                setMessage(`已选择仓库凭证引用：${credential.ref}`);
+                setMessageTone("success");
+                return;
+              }
+              if (credential.provider === "github" && credential.kind === "webhook_secret") {
+                setWebhookSecretRef(credential.ref);
+                setRepoProvider("github");
+                setMessage(`已选择 Webhook Secret 引用：${credential.ref}`);
+                setMessageTone("success");
+                return;
+              }
+              setMessage(`${credential.ref} 用于部署中心 credential_ref 或 Worker 环境。`);
+              setMessageTone(credential.configured ? "success" : "warning");
+            }}
+          />
 
           <Card>
             <SectionTitle title="构建 Profile" badge={profileEnabled ? "enabled" : "disabled"} />
@@ -345,6 +374,46 @@ function EntityList<T>({ title, items, renderItem }: { title: string; items: T[]
     <Card>
       <SectionTitle title={title} badge={`${items.length} 条`} />
       <div className="grid gap-2">{items.length ? items.map(renderItem) : <EmptyBox text={`暂无${title}`} />}</div>
+    </Card>
+  );
+}
+
+function CredentialReferencePanel({ credentials, onUse }: { credentials: IntegrationCredentialStatus[]; onUse: (credential: IntegrationCredentialStatus) => void }) {
+  return (
+    <Card>
+      <SectionTitle title="凭证引用" badge={`${credentials.filter((item) => item.configured).length}/${credentials.length} 已配置`} />
+      <div className="grid gap-2">
+        {credentials.map((credential) => (
+          <div key={credential.ref} className="rounded-lg border p-3 text-xs">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <div className="flex items-center gap-2">
+                  <KeyRound className="h-3.5 w-3.5 text-muted-foreground" />
+                  <span className="truncate font-medium">{credential.name}</span>
+                </div>
+                <div className="mt-1 truncate font-mono text-[11px] text-muted-foreground">{credential.ref}</div>
+              </div>
+              <Badge tone={credential.configured ? "success" : "warning"}>{credential.configured ? "已配置" : "待配置"}</Badge>
+            </div>
+            <div className="mt-2 grid gap-1">
+              <Info label="Provider" value={credential.provider} />
+              <Info label="用途" value={credential.usage} />
+              <Info label="已命中" value={credential.configured_env_vars?.join(" / ") || "-"} />
+            </div>
+            <div className="mt-2 grid gap-1 rounded-md bg-muted p-2 font-mono text-[11px] text-muted-foreground">
+              {credential.env_vars.map((envVar) => (
+                <span key={envVar} className="break-all">
+                  {envVar}
+                </span>
+              ))}
+            </div>
+            <Button className="mt-2 w-full" variant="secondary" size="sm" onClick={() => onUse(credential)}>
+              使用引用
+            </Button>
+          </div>
+        ))}
+        {!credentials.length ? <EmptyBox text="暂无凭证引用" /> : null}
+      </div>
     </Card>
   );
 }

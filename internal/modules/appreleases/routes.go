@@ -42,6 +42,7 @@ func (h *Handler) RoutesWithOptions(opts RouteOptions) chi.Router {
 		r.Post("/admin/api/build-center/projects/{project_key}/runs", h.CreateBuildCenterRun)
 		r.Get("/admin/api/build-center/runs/{run_id}", h.BuildCenterRun)
 		r.Get("/admin/api/build-center/runs/{run_id}/logs", h.BuildCenterRunLogs)
+		r.Get("/admin/api/integration-credentials", h.IntegrationCredentials)
 		r.Get("/admin/api/deployment-targets", h.DeploymentTargets)
 		r.Post("/admin/api/deployment-targets", h.CreateDeploymentTarget)
 		r.Get("/admin/api/deployments", h.Deployments)
