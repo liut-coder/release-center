@@ -41,6 +41,38 @@ func (s *PostgresStore) ReleasePlan(ctx context.Context, planID string) (Release
 	return plans[0], nil
 }
 
+func (s *PostgresStore) PreviousReleasePlan(ctx context.Context, planID string) (ReleasePlanAdmin, error) {
+	plans, err := s.listReleasePlans(ctx, `
+		and rp.id = (
+		  select previous.id
+		  from release_plans current
+		  join release_plans previous
+		    on previous.tenant_id = current.tenant_id
+		   and previous.project_id = current.project_id
+		   and previous.release_unit_id = current.release_unit_id
+		   and previous.environment_id = current.environment_id
+		  where current.tenant_id = 'default'
+		    and current.id = $1::uuid
+		    and previous.id <> current.id
+		    and previous.status in ('released', 'rolling_out')
+		    and coalesce(previous.published_at, previous.updated_at, previous.created_at)
+		        < coalesce(current.published_at, current.updated_at, current.created_at)
+		  order by coalesce(previous.published_at, previous.updated_at, previous.created_at) desc
+		  limit 1
+		)
+	`, planID)
+	if err != nil {
+		return ReleasePlanAdmin{}, err
+	}
+	if len(plans) == 0 {
+		return ReleasePlanAdmin{}, pgx.ErrNoRows
+	}
+	if err := s.attachReleasePlanArtifacts(ctx, plans); err != nil {
+		return ReleasePlanAdmin{}, err
+	}
+	return plans[0], nil
+}
+
 func (s *PostgresStore) CreateReleaseUnit(ctx context.Context, req CreateReleaseUnitRequest) (ReleaseUnitAdmin, error) {
 	enabled := true
 	if req.Enabled != nil {

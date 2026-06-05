@@ -18,6 +18,10 @@ type ReleasePlanStore interface {
 	UpdateReleasePlanStatus(ctx context.Context, planID, status string, req ReleasePlanActionRequest) (ReleasePlanAdmin, error)
 }
 
+type ReleasePlanRollbackStore interface {
+	PreviousReleasePlan(ctx context.Context, planID string) (ReleasePlanAdmin, error)
+}
+
 func (s *Service) ReleasePlanOverview(ctx context.Context) (ReleasePlanOverview, error) {
 	store, ok := s.store.(ReleasePlanStore)
 	if !ok {
@@ -133,6 +137,13 @@ func (s *Service) ReleasePlanAction(ctx context.Context, planID, action string, 
 	planID = strings.TrimSpace(planID)
 	action = strings.TrimSpace(action)
 	req.ApprovedBy = strings.TrimSpace(req.ApprovedBy)
+	req.TargetID = strings.TrimSpace(req.TargetID)
+	req.TargetKey = strings.TrimSpace(req.TargetKey)
+	req.TriggeredBy = strings.TrimSpace(req.TriggeredBy)
+	req.DeploymentURL = strings.TrimSpace(req.DeploymentURL)
+	if action == "rollback" {
+		return s.rollbackReleasePlan(ctx, store, planID, req)
+	}
 	status := ""
 	message := "发布计划状态已更新"
 	switch action {
@@ -142,9 +153,6 @@ func (s *Service) ReleasePlanAction(ctx context.Context, planID, action string, 
 	case "pause":
 		status = "paused"
 		message = "发布计划已暂停"
-	case "rollback":
-		status = "rolled_back"
-		message = "发布计划已回滚"
 	default:
 		return ReleasePlanActionResponse{}, fmt.Errorf("unsupported release plan action: %s", action)
 	}
@@ -156,6 +164,87 @@ func (s *Service) ReleasePlanAction(ctx context.Context, planID, action string, 
 		"approved_by": req.ApprovedBy,
 	}))
 	return ReleasePlanActionResponse{OK: true, Plan: plan, MessageZh: message}, nil
+}
+
+func (s *Service) rollbackReleasePlan(ctx context.Context, store ReleasePlanStore, planID string, req ReleasePlanActionRequest) (ReleasePlanActionResponse, error) {
+	if planID == "" {
+		return ReleasePlanActionResponse{}, fmt.Errorf("plan_id is required")
+	}
+	rollbackStore, ok := s.store.(ReleasePlanRollbackStore)
+	if !ok {
+		return ReleasePlanActionResponse{}, fmt.Errorf("release plan rollback store unavailable")
+	}
+	current, err := store.ReleasePlan(ctx, planID)
+	if err != nil {
+		return ReleasePlanActionResponse{}, err
+	}
+	previous, err := rollbackStore.PreviousReleasePlan(ctx, planID)
+	if err != nil {
+		return ReleasePlanActionResponse{}, err
+	}
+	rollbackResp, err := s.CreateReleasePlan(ctx, rollbackReleasePlanRequest(current, previous, req))
+	if err != nil {
+		return ReleasePlanActionResponse{}, err
+	}
+	rollbackPlan := rollbackResp.Plan
+	resp := ReleasePlanActionResponse{
+		OK:           true,
+		RollbackPlan: &rollbackPlan,
+		MessageZh:    "发布计划已回滚，已生成回滚计划",
+	}
+	if releasePlanRollbackDeploymentRequested(req) {
+		deployResp, err := s.CreateReleasePlanDeployment(ctx, rollbackPlan.ID, CreateReleasePlanDeploymentRequest{
+			TargetID:      req.TargetID,
+			TargetKey:     req.TargetKey,
+			DryRun:        req.DryRun,
+			TriggeredBy:   firstNonBlank(req.TriggeredBy, req.ApprovedBy, "rollback"),
+			DeploymentURL: req.DeploymentURL,
+			Metadata: mergeMaps(req.Metadata, map[string]any{
+				"source":                    "release_plan_rollback",
+				"rollback_from_plan_id":     current.ID,
+				"rollback_from_plan_key":    current.PlanKey,
+				"rollback_to_plan_id":       previous.ID,
+				"rollback_to_plan_key":      previous.PlanKey,
+				"rollback_release_plan_id":  rollbackPlan.ID,
+				"rollback_release_plan_key": rollbackPlan.PlanKey,
+			}),
+		})
+		if err != nil {
+			return ReleasePlanActionResponse{}, err
+		}
+		resp.DeploymentRecords = deployResp.DeploymentRecords
+		resp.WorkerTasks = deployResp.WorkerTasks
+		resp.MessageZh = releasePlanRollbackMessage(req.DryRun, len(deployResp.WorkerTasks), len(deployResp.DeploymentRecords))
+	}
+	updateReq := req
+	updateReq.Metadata = mergeMaps(req.Metadata, map[string]any{
+		"rollback_plan_id":   rollbackPlan.ID,
+		"rollback_plan_key":  rollbackPlan.PlanKey,
+		"rollback_to_id":     previous.ID,
+		"rollback_to_key":    previous.PlanKey,
+		"rollback_to_status": previous.Status,
+	})
+	plan, err := store.UpdateReleasePlanStatus(ctx, planID, "rolled_back", updateReq)
+	if err != nil {
+		return ReleasePlanActionResponse{}, err
+	}
+	resp.Plan = plan
+	s.insertAudit(ctx, "release_plan.rollback", "release_plan", plan.ID, "发布计划已回滚", releasePlanAuditMetadata(plan, map[string]any{
+		"approved_by":       req.ApprovedBy,
+		"rollback_plan_id":  rollbackPlan.ID,
+		"rollback_plan_key": rollbackPlan.PlanKey,
+		"rollback_to_id":    previous.ID,
+		"rollback_to_key":   previous.PlanKey,
+		"deployment_count":  len(resp.DeploymentRecords),
+		"worker_task_count": len(resp.WorkerTasks),
+	}))
+	s.insertAudit(ctx, "release_plan.rollback_plan", "release_plan", rollbackPlan.ID, "生成回滚发布计划", releasePlanAuditMetadata(rollbackPlan, map[string]any{
+		"rollback_from_plan_id":  current.ID,
+		"rollback_from_plan_key": current.PlanKey,
+		"rollback_to_plan_id":    previous.ID,
+		"rollback_to_plan_key":   previous.PlanKey,
+	}))
+	return resp, nil
 }
 
 func (s *Service) CreateReleasePlanDeployment(ctx context.Context, planID string, req CreateReleasePlanDeploymentRequest) (ReleasePlanDeploymentResponse, error) {
@@ -273,6 +362,90 @@ func releasePlanDeploymentMessage(dryRun bool, pendingApproval int) string {
 		return fmt.Sprintf("发布计划部署记录已创建，%d 条生产部署等待审批", pendingApproval)
 	}
 	return "发布计划部署记录已创建并投递 Worker"
+}
+
+func rollbackReleasePlanRequest(current, previous ReleasePlanAdmin, req ReleasePlanActionRequest) CreateReleasePlanRequest {
+	status := "draft"
+	if releasePlanRollbackDeploymentRequested(req) && !req.DryRun {
+		status = "queued"
+	}
+	artifacts := make([]ReleasePlanArtifactRequest, 0, len(previous.Artifacts))
+	for _, artifact := range previous.Artifacts {
+		metadata := rawJSONMap(artifact.Metadata)
+		metadata = mergeMaps(metadata, map[string]any{
+			"source":                  "release_plan_rollback",
+			"rollback_from_plan_id":   current.ID,
+			"rollback_from_plan_key":  current.PlanKey,
+			"rollback_target_plan_id": previous.ID,
+			"rollback_target_key":     previous.PlanKey,
+		})
+		artifacts = append(artifacts, ReleasePlanArtifactRequest{
+			BuildRunID:         artifact.BuildRunID,
+			AppBuildID:         artifact.AppBuildID,
+			AppBuildArtifactID: artifact.AppBuildArtifactID,
+			ArtifactName:       artifact.ArtifactName,
+			ArtifactType:       artifact.ArtifactType,
+			FileName:           artifact.FileName,
+			ImmutableRef:       artifact.ImmutableRef,
+			Metadata:           metadata,
+		})
+	}
+	targetType := firstNonBlank(current.TargetType, previous.TargetType, "all")
+	targetValue := current.TargetValue
+	if targetType == "all" {
+		targetValue = ""
+	} else if targetValue == "" {
+		targetValue = previous.TargetValue
+	}
+	return CreateReleasePlanRequest{
+		ProjectKey:        current.ProjectKey,
+		UnitKey:           current.UnitKey,
+		EnvironmentKey:    current.EnvironmentKey,
+		PlanKey:           rollbackReleasePlanKey(current, previous),
+		Title:             fmt.Sprintf("回滚 %s 到 %s", firstNonBlank(current.Title, current.PlanKey), firstNonBlank(previous.VersionName, previous.PlanKey)),
+		Description:       fmt.Sprintf("由发布计划 %s 回滚到 %s", current.PlanKey, previous.PlanKey),
+		VersionName:       previous.VersionName,
+		BuildNumber:       previous.BuildNumber,
+		GitCommit:         previous.GitCommit,
+		Channel:           firstNonBlank(previous.Channel, current.Channel),
+		Status:            status,
+		RolloutPercentage: normalizeRollout(previous.RolloutPercentage),
+		TargetType:        targetType,
+		TargetValue:       targetValue,
+		ApprovedBy:        req.ApprovedBy,
+		CreatedBy:         firstNonBlank(req.ApprovedBy, "rollback"),
+		Artifacts:         artifacts,
+		Metadata: mergeMaps(req.Metadata, map[string]any{
+			"source":                  "release_plan_rollback",
+			"rollback_from_plan_id":   current.ID,
+			"rollback_from_plan_key":  current.PlanKey,
+			"rollback_target_plan_id": previous.ID,
+			"rollback_target_key":     previous.PlanKey,
+			"rollback_dry_run":        req.DryRun,
+		}),
+	}
+}
+
+func rollbackReleasePlanKey(current, previous ReleasePlanAdmin) string {
+	key := fmt.Sprintf("rollback-%s-to-%s", safeFilePart(firstNonBlank(current.PlanKey, current.ID)), safeFilePart(firstNonBlank(previous.PlanKey, previous.ID)))
+	if len(key) > 128 {
+		return strings.TrimRight(key[:128], "-")
+	}
+	return key
+}
+
+func releasePlanRollbackDeploymentRequested(req ReleasePlanActionRequest) bool {
+	return strings.TrimSpace(req.TargetID) != "" || strings.TrimSpace(req.TargetKey) != ""
+}
+
+func releasePlanRollbackMessage(dryRun bool, workerTasks, deployments int) string {
+	if dryRun {
+		return fmt.Sprintf("发布计划已回滚，已生成回滚计划和 %d 条 dry-run 部署记录", deployments)
+	}
+	if workerTasks > 0 {
+		return fmt.Sprintf("发布计划已回滚，已生成回滚计划并投递 %d 个 Worker 任务", workerTasks)
+	}
+	return fmt.Sprintf("发布计划已回滚，已生成回滚计划和 %d 条部署记录", deployments)
 }
 
 func releasePlanAuditMetadata(plan ReleasePlanAdmin, extra map[string]any) map[string]any {

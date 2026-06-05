@@ -486,6 +486,7 @@ worker 注册
 当前已落地：
 
 - 部署记录已支持按同目标上一条成功记录生成回滚部署，并可 dry-run 或投递 Worker。
+- 发布计划 rollback 会基于同发布单元、同环境上一条 released/rolling_out 计划生成回滚发布计划；请求带部署目标时会继续创建部署记录并按 dry-run/Worker 流程执行。
 - 构建中心配置/任务创建、发布单元/发布计划/发布计划部署、部署目标保存、部署创建、完成、失败和回滚已写入 `audit_events`。
 - prod 部署审批门禁已接入部署中心：非 dry-run 先落 `pending_approval` 记录，批准后投递 Worker。
 
@@ -560,4 +561,4 @@ origin=https://github.com/liut-coder/release-center.git
 - GitHub 接入验收：配置 webhook secret/route enable，完成 push/tag 自动创建构建任务的真实仓库 smoke。
 - Android 发布单元迁移：旧 APK 发布接口已开始镜像 Android release unit/release plan；下一步把前端 APK 发布页收敛进统一发布计划工作台。
 - 审批/RBAC：构建/发布/部署权限拦截和角色权限矩阵验收。
-- 回滚执行闭环：基于上一条成功 `deployment_records` 或 `release_plans` 生成回滚计划并投递 Worker。
+- 回滚执行闭环：部署记录回滚和 release plan 回滚计划生成已落地；下一步补前端目标选择和真实生产回滚演练。

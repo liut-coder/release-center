@@ -138,6 +138,11 @@ export interface CreateReleasePlanPayload {
 
 export interface ReleasePlanActionPayload {
   approved_by?: string;
+  target_id?: string;
+  target_key?: string;
+  dry_run?: boolean;
+  triggered_by?: string;
+  deployment_url?: string;
   metadata?: Record<string, unknown>;
 }
 
@@ -191,7 +196,14 @@ export function createReleasePlanDeployment(planId: string, payload: CreateRelea
 }
 
 function releasePlanAction(planId: string, action: "publish" | "pause" | "rollback", payload: ReleasePlanActionPayload) {
-  return apiRequest<{ ok: boolean; plan: ReleasePlan; message_zh?: string }>(
+  return apiRequest<{
+    ok: boolean;
+    plan: ReleasePlan;
+    rollback_plan?: ReleasePlan;
+    deployment_records?: DeploymentRecord[];
+    worker_tasks?: WorkerTask[];
+    message_zh?: string;
+  }>(
     `/admin/api/release-plans/${encodeURIComponent(planId)}/${action}`,
     {
       method: "POST",

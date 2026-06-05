@@ -129,8 +129,13 @@ type ReleasePlanArtifactRequest struct {
 }
 
 type ReleasePlanActionRequest struct {
-	ApprovedBy string         `json:"approved_by"`
-	Metadata   map[string]any `json:"metadata"`
+	ApprovedBy    string         `json:"approved_by"`
+	TargetID      string         `json:"target_id"`
+	TargetKey     string         `json:"target_key"`
+	DryRun        bool           `json:"dry_run"`
+	TriggeredBy   string         `json:"triggered_by"`
+	DeploymentURL string         `json:"deployment_url"`
+	Metadata      map[string]any `json:"metadata"`
 }
 
 type CreateReleasePlanDeploymentRequest struct {
@@ -143,9 +148,12 @@ type CreateReleasePlanDeploymentRequest struct {
 }
 
 type ReleasePlanActionResponse struct {
-	OK        bool             `json:"ok"`
-	Plan      ReleasePlanAdmin `json:"plan"`
-	MessageZh string           `json:"message_zh,omitempty"`
+	OK                bool                    `json:"ok"`
+	Plan              ReleasePlanAdmin        `json:"plan"`
+	RollbackPlan      *ReleasePlanAdmin       `json:"rollback_plan,omitempty"`
+	DeploymentRecords []DeploymentRecordAdmin `json:"deployment_records,omitempty"`
+	WorkerTasks       []WorkerTaskAdmin       `json:"worker_tasks,omitempty"`
+	MessageZh         string                  `json:"message_zh,omitempty"`
 }
 
 type ReleasePlanDeploymentResponse struct {
