@@ -322,6 +322,38 @@ func deploymentRecordAuditMetadata(record DeploymentRecordAdmin) map[string]any 
 	}
 }
 
+func deploymentRecordMetadataForTarget(target DeploymentTargetAdmin, req CreateDeploymentRequest) map[string]any {
+	metadata := mergeMaps(req.Metadata, map[string]any{
+		"provider":               target.Provider,
+		"environment":            target.Environment,
+		"deployment_target_id":   target.ID,
+		"deployment_target_key":  target.TargetKey,
+		"deployment_target_name": target.Name,
+	})
+	if target.CredentialRef != "" {
+		metadata["credential_ref"] = target.CredentialRef
+	}
+	if strings.HasPrefix(target.Provider, "cloudflare_") {
+		if target.CloudflareAccountID != "" {
+			metadata["cloudflare_account_id"] = target.CloudflareAccountID
+		}
+		if target.CloudflareProjectName != "" {
+			metadata["cloudflare_project_name"] = target.CloudflareProjectName
+		}
+		if target.CloudflareScriptName != "" {
+			metadata["cloudflare_script_name"] = target.CloudflareScriptName
+		}
+		if target.CloudflareBucketName != "" {
+			metadata["cloudflare_bucket_name"] = target.CloudflareBucketName
+		}
+		command := cloudflareDeploymentCommand(target, CreateDeploymentRequest{Metadata: metadata})
+		if len(command) > 0 {
+			metadata["prepared_command"] = command
+		}
+	}
+	return metadata
+}
+
 func normalizeDeploymentProvider(provider string) string {
 	provider = strings.ToLower(strings.TrimSpace(provider))
 	switch provider {

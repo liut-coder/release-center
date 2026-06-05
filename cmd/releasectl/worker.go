@@ -14,6 +14,7 @@ import (
 	"os/exec"
 	"regexp"
 	"runtime"
+	"sort"
 	"strings"
 	"time"
 
@@ -39,10 +40,13 @@ type workerRunConfig struct {
 }
 
 type workerCommandSpec struct {
-	Source  string
-	Args    []string
-	Shell   string
-	Display string
+	Source        string
+	Args          []string
+	Shell         string
+	Display       string
+	Env           map[string]string
+	EnvSources    map[string]string
+	CredentialRef string
 }
 
 func runWorkerRun(args []string) error {
@@ -209,7 +213,7 @@ func runWorkerCommand(ctx context.Context, cfg workerRunConfig, spec workerComma
 	if cfg.Workdir != "" {
 		cmd.Dir = cfg.Workdir
 	}
-	cmd.Env = os.Environ()
+	cmd.Env = workerCommandEnv(os.Environ(), spec.Env)
 	out, err := cmd.CombinedOutput()
 	exitCode := 0
 	if err != nil {
@@ -232,13 +236,13 @@ func workerTaskCommand(task appreleases.WorkerTaskAdmin) (workerCommandSpec, err
 	}
 	for _, key := range []string{"prepared_command", "command"} {
 		if spec, ok := commandSpecFromValue(key, metadata[key]); ok {
-			return spec, nil
+			return enrichWorkerCommandSpec(task, metadata, spec)
 		}
 	}
 	if commands, ok := metadata["commands"].(map[string]any); ok {
 		for _, key := range []string{task.Action, task.TaskType, "default"} {
 			if spec, ok := commandSpecFromValue("commands."+key, commands[key]); ok {
-				return spec, nil
+				return enrichWorkerCommandSpec(task, metadata, spec)
 			}
 		}
 	}
@@ -278,6 +282,110 @@ func commandSpecFromValue(source string, value any) (workerCommandSpec, bool) {
 	}
 }
 
+func enrichWorkerCommandSpec(task appreleases.WorkerTaskAdmin, metadata map[string]any, spec workerCommandSpec) (workerCommandSpec, error) {
+	if !workerTaskIsCloudflare(task, metadata) {
+		return spec, nil
+	}
+	credentialRef := metadataString(metadata, "credential_ref")
+	token, tokenSource := lookupCloudflareAPIToken(credentialRef)
+	if credentialRef != "" && token == "" {
+		return workerCommandSpec{}, fmt.Errorf("cloudflare credential_ref %q is set but no matching token env was found", credentialRef)
+	}
+	if token != "" {
+		workerSpecSetEnv(&spec, "CLOUDFLARE_API_TOKEN", token, tokenSource)
+	}
+	if accountID := metadataString(metadata, "cloudflare_account_id"); accountID != "" {
+		workerSpecSetEnv(&spec, "CLOUDFLARE_ACCOUNT_ID", accountID, "task_metadata.cloudflare_account_id")
+	}
+	if credentialRef != "" {
+		spec.CredentialRef = credentialRef
+	}
+	return spec, nil
+}
+
+func workerTaskIsCloudflare(task appreleases.WorkerTaskAdmin, metadata map[string]any) bool {
+	return strings.HasPrefix(strings.ToLower(strings.TrimSpace(task.Action)), "cloudflare_") ||
+		strings.HasPrefix(strings.ToLower(metadataString(metadata, "provider")), "cloudflare_")
+}
+
+func workerSpecSetEnv(spec *workerCommandSpec, key, value, source string) {
+	key = strings.TrimSpace(key)
+	value = strings.TrimSpace(value)
+	if key == "" || value == "" {
+		return
+	}
+	if spec.Env == nil {
+		spec.Env = map[string]string{}
+	}
+	if spec.EnvSources == nil {
+		spec.EnvSources = map[string]string{}
+	}
+	spec.Env[key] = value
+	spec.EnvSources[key] = source
+}
+
+func lookupCloudflareAPIToken(credentialRef string) (string, string) {
+	for _, key := range cloudflareCredentialEnvNames(credentialRef) {
+		if value := strings.TrimSpace(os.Getenv(key)); value != "" {
+			return value, key
+		}
+	}
+	return "", ""
+}
+
+func cloudflareCredentialEnvNames(credentialRef string) []string {
+	ref := credentialEnvSuffix(credentialRef)
+	names := []string{}
+	if ref != "" {
+		names = append(names,
+			"RELEASE_CENTER_CREDENTIAL_"+ref,
+			"CLOUDFLARE_API_TOKEN_"+ref,
+			ref,
+		)
+	}
+	names = append(names, "CLOUDFLARE_API_TOKEN")
+	return names
+}
+
+func credentialEnvSuffix(value string) string {
+	value = strings.ToUpper(strings.TrimSpace(value))
+	if value == "" {
+		return ""
+	}
+	var b strings.Builder
+	lastUnderscore := false
+	for _, r := range value {
+		if (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') {
+			b.WriteRune(r)
+			lastUnderscore = false
+			continue
+		}
+		if !lastUnderscore {
+			b.WriteByte('_')
+			lastUnderscore = true
+		}
+	}
+	return strings.Trim(b.String(), "_")
+}
+
+func metadataString(metadata map[string]any, key string) string {
+	value, ok := metadata[key]
+	if !ok {
+		return ""
+	}
+	if value == nil {
+		return ""
+	}
+	switch typed := value.(type) {
+	case string:
+		return strings.TrimSpace(typed)
+	case fmt.Stringer:
+		return strings.TrimSpace(typed.String())
+	default:
+		return strings.TrimSpace(fmt.Sprint(typed))
+	}
+}
+
 func workerExecutionMetadata(spec workerCommandSpec, duration time.Duration, exitCode int, output []byte) map[string]any {
 	metadata := map[string]any{
 		"worker_agent":          workerAgentName,
@@ -288,6 +396,15 @@ func workerExecutionMetadata(spec workerCommandSpec, duration time.Duration, exi
 	}
 	if deploymentURL := firstURL(string(output)); deploymentURL != "" {
 		metadata["deployment_url"] = deploymentURL
+	}
+	if spec.CredentialRef != "" {
+		metadata["worker_credential_ref"] = spec.CredentialRef
+	}
+	if len(spec.Env) > 0 {
+		metadata["worker_env_keys"] = sortedMapKeys(spec.Env)
+	}
+	if len(spec.EnvSources) > 0 {
+		metadata["worker_env_sources"] = spec.EnvSources
 	}
 	return metadata
 }
@@ -431,6 +548,40 @@ func trimCommandArgs(args []string) []string {
 		}
 	}
 	return out
+}
+
+func workerCommandEnv(base []string, extra map[string]string) []string {
+	if len(extra) == 0 {
+		return base
+	}
+	keys := sortedMapKeys(extra)
+	override := map[string]struct{}{}
+	for _, key := range keys {
+		override[key] = struct{}{}
+	}
+	out := make([]string, 0, len(base)+len(extra))
+	for _, item := range base {
+		key, _, ok := strings.Cut(item, "=")
+		if ok {
+			if _, exists := override[key]; exists {
+				continue
+			}
+		}
+		out = append(out, item)
+	}
+	for _, key := range keys {
+		out = append(out, key+"="+extra[key])
+	}
+	return out
+}
+
+func sortedMapKeys(values map[string]string) []string {
+	keys := make([]string, 0, len(values))
+	for key := range values {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	return keys
 }
 
 func splitCSV(value string) []string {

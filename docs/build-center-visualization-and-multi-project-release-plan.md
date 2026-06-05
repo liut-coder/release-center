@@ -364,7 +364,8 @@ credential_ref=cf_token_release_prod
 - `POST /admin/api/deployments` 可按 project + target 创建部署记录，支持 dry-run。
 - Cloudflare Pages/Workers/R2 目标会生成 wrangler 准备命令写入部署记录 metadata。
 - 非 dry-run Cloudflare 部署会按 provider 投递带 `cloudflare` 标签的 Worker 任务，外部 worker 可读取 prepared command 执行 wrangler。
-- `releasectl worker-run -labels linux,node,cloudflare -execute` 可在已安装 wrangler 的机器上执行这些 prepared command。
+- 部署记录 metadata 会带上非敏感的 `credential_ref`、Cloudflare account/project/script/bucket 字段，Worker 用这些字段选择本机凭据。
+- `releasectl worker-run -labels linux,node,cloudflare -execute` 可在已安装 wrangler 的机器上执行这些 prepared command，并把匹配到的 token/account id 注入 wrangler 环境。
 - 支持 `/complete` 和 `/fail` 回填外部部署状态、URL、日志和错误信息。
 - Admin 前端新增部署中心，支持部署目标维护、从制品中心选择制品创建 Cloudflare Pages/Worker/R2 dry-run 或 Worker 投递部署记录、prepared command 展示和状态回填。
 - Admin 前端部署记录支持回滚操作，复用部署投递区的 Dry-run 开关控制只落记录或直接投递 Worker。
@@ -375,6 +376,17 @@ Cloudflare worker 机器凭据约定：
 CLOUDFLARE_API_TOKEN     wrangler 使用的真实 token，不写入数据库和 Git
 CLOUDFLARE_ACCOUNT_ID    需要账号上下文时在机器环境提供
 ```
+
+如果部署目标配置了 `credential_ref=cf_token_release_prod`，`releasectl worker-run` 会按下面顺序在 worker 机器查找 token，并注入为 `CLOUDFLARE_API_TOKEN`：
+
+```text
+RELEASE_CENTER_CREDENTIAL_CF_TOKEN_RELEASE_PROD
+CLOUDFLARE_API_TOKEN_CF_TOKEN_RELEASE_PROD
+CF_TOKEN_RELEASE_PROD
+CLOUDFLARE_API_TOKEN
+```
+
+`credential_ref` 会统一转成大写下划线格式。任务完成/失败回填只记录 `worker_credential_ref`、`worker_env_keys` 和 env 来源名，不记录 token 明文。
 
 ## 7. 全流程闭环
 

@@ -121,16 +121,7 @@ func (s *PostgresStore) CreateDeploymentRecord(ctx context.Context, req CreateDe
 	if !target.Enabled && !req.DryRun {
 		return DeploymentRecordAdmin{}, fmt.Errorf("deployment target is disabled")
 	}
-	metadata := mergeMaps(req.Metadata, map[string]any{
-		"provider":    target.Provider,
-		"environment": target.Environment,
-	})
-	if strings.HasPrefix(target.Provider, "cloudflare_") {
-		command := cloudflareDeploymentCommand(target, CreateDeploymentRequest{Metadata: metadata})
-		if len(command) > 0 {
-			metadata["prepared_command"] = command
-		}
-	}
+	metadata := deploymentRecordMetadataForTarget(target, req)
 	if deploymentTargetRequiresApproval(target, req) {
 		req.ProviderStatus = "pending_approval"
 		metadata = mergeMaps(metadata, map[string]any{

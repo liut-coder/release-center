@@ -42,6 +42,41 @@ func TestCloudflareDeploymentCommandR2(t *testing.T) {
 	}
 }
 
+func TestDeploymentRecordMetadataIncludesCloudflareCredentialRef(t *testing.T) {
+	metadata := deploymentRecordMetadataForTarget(DeploymentTargetAdmin{
+		ID:                    "target-1",
+		TargetKey:             "pages-prod",
+		Name:                  "Pages prod",
+		Provider:              "cloudflare_pages",
+		Environment:           "prod",
+		CloudflareAccountID:   "account-1",
+		CloudflareProjectName: "release-center-admin",
+		CredentialRef:         "cf_token_release_prod",
+	}, CreateDeploymentRequest{Metadata: map[string]any{
+		"artifact_path": "web/dist",
+	}})
+
+	if metadata["credential_ref"] != "cf_token_release_prod" || metadata["cloudflare_account_id"] != "account-1" {
+		t.Fatalf("cloudflare credential metadata missing: %#v", metadata)
+	}
+	if metadata["deployment_target_key"] != "pages-prod" || metadata["provider"] != "cloudflare_pages" {
+		t.Fatalf("target metadata missing: %#v", metadata)
+	}
+	command, ok := metadata["prepared_command"].([]string)
+	if !ok {
+		t.Fatalf("prepared_command should be []string, got %#v", metadata["prepared_command"])
+	}
+	want := []string{"wrangler", "pages", "deploy", "web/dist", "--project-name", "release-center-admin"}
+	if len(command) != len(want) {
+		t.Fatalf("expected %d prepared command args, got %#v", len(want), command)
+	}
+	for i := range want {
+		if command[i] != want[i] {
+			t.Fatalf("command[%d] = %q, want %q", i, command[i], want[i])
+		}
+	}
+}
+
 func TestNormalizeDeploymentStatus(t *testing.T) {
 	if got := normalizeDeploymentStatus(" SUCCESS "); got != "success" {
 		t.Fatalf("expected success, got %q", got)
