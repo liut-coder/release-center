@@ -236,6 +236,7 @@ POST /api/v1/workers/tasks/{task_id}/fail
 - 构建项目、代码仓库、构建 profile、Webhook 路由和手工构建任务创建都会写 `audit_events`，用于审计构建链路。
 - prod 非 dry-run 部署会先进入 `pending_approval`，审批通过后才投递 Worker。
 - prod 发布计划发布会先进入 `pending_approval`，发布中心审批通过后才进入 `released`。
+- 需审批环境的发布计划非 dry-run 部署已加门禁，只允许 released/rolling_out 计划投递；dry-run 仍可用于部署验证。
 
 外部机器最小启动方式：
 
@@ -489,7 +490,7 @@ worker 注册
 - 部署记录已支持按同目标上一条成功记录生成回滚部署，并可 dry-run 或投递 Worker。
 - 发布计划 rollback 会基于同发布单元、同环境上一条 released/rolling_out 计划生成回滚发布计划；请求带部署目标时会继续创建部署记录并按 dry-run/Worker 流程执行。
 - 构建中心配置/任务创建、发布单元/发布计划/发布计划部署、部署目标保存、部署创建、完成、失败和回滚已写入 `audit_events`。
-- prod 审批门禁已接入发布计划和部署中心：发布计划先落 `pending_approval`，审批后进入 released；非 dry-run 部署先落 `pending_approval` 记录，批准后投递 Worker。
+- prod 审批门禁已接入发布计划和部署中心：发布计划先落 `pending_approval`，审批后进入 released；发布计划部署入口阻止未审批计划做非 dry-run 投递；非 dry-run 部署先落 `pending_approval` 记录，批准后投递 Worker。
 
 ## 9. 当前分支建议范围
 

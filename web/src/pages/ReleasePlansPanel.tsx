@@ -587,6 +587,9 @@ function ReleasePlanList({
       {plans.map((plan) => {
         const released = plan.status === "released" || plan.status === "rolling_out";
         const pendingApproval = plan.status === "pending_approval";
+        const requiresApproval = releasePlanRequiresApproval(plan);
+        const deploymentBlockedByApproval = !deploymentDryRun && requiresApproval && !released;
+        const rollbackDeployBlockedByApproval = !deploymentDryRun && requiresApproval;
         return (
           <div key={plan.id} className="rounded-lg border p-3">
             <div className="flex flex-wrap items-start justify-between gap-3">
@@ -622,12 +625,17 @@ function ReleasePlanList({
                   variant="secondary"
                   size="sm"
                   onClick={() => onAction(plan, "rollback_deploy")}
-                  disabled={busy || !deploymentTargetId || plan.status === "rolled_back"}
+                  disabled={busy || !deploymentTargetId || plan.status === "rolled_back" || rollbackDeployBlockedByApproval}
                 >
                   <History className="mr-2 h-3.5 w-3.5" />
                   {deploymentDryRun ? "回滚部署" : "回滚投递"}
                 </Button>
-                <Button variant="secondary" size="sm" onClick={() => onDeploy(plan)} disabled={busy || !deploymentTargetId || !(plan.artifacts?.length)}>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => onDeploy(plan)}
+                  disabled={busy || !deploymentTargetId || !(plan.artifacts?.length) || deploymentBlockedByApproval}
+                >
                   <Cloud className="mr-2 h-3.5 w-3.5" />
                   {deploymentDryRun ? "部署" : "投递"}
                 </Button>
@@ -832,6 +840,11 @@ function releasePlanStatusLabel(status?: ReleasePlanStatus) {
       archived: "已归档",
     }[status ?? "draft"] ?? status
   );
+}
+
+function releasePlanRequiresApproval(plan: ReleasePlan) {
+  const environmentKey = (plan.environment_key || "").trim().toLowerCase();
+  return Boolean(plan.environment_requires_approval) || environmentKey === "prod" || environmentKey === "production";
 }
 
 function unitTypeLabel(type?: ReleaseUnitType) {

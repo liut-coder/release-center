@@ -314,6 +314,9 @@ func (s *Service) CreateReleasePlanDeployment(ctx context.Context, planID string
 	if err != nil {
 		return ReleasePlanDeploymentResponse{}, err
 	}
+	if err := ensureReleasePlanDeploymentApproved(plan, req.DryRun); err != nil {
+		return ReleasePlanDeploymentResponse{}, err
+	}
 	if len(plan.Artifacts) == 0 {
 		return ReleasePlanDeploymentResponse{}, fmt.Errorf("release plan artifacts are required")
 	}
@@ -405,6 +408,18 @@ func releasePlanDeploymentMessage(dryRun bool, pendingApproval int) string {
 		return fmt.Sprintf("发布计划部署记录已创建，%d 条生产部署等待审批", pendingApproval)
 	}
 	return "发布计划部署记录已创建并投递 Worker"
+}
+
+func ensureReleasePlanDeploymentApproved(plan ReleasePlanAdmin, dryRun bool) error {
+	if dryRun || !releasePlanRequiresApproval(plan) {
+		return nil
+	}
+	switch plan.Status {
+	case "released", "rolling_out":
+		return nil
+	default:
+		return fmt.Errorf("release plan must be approved before non-dry-run deployment")
+	}
 }
 
 func rollbackReleasePlanRequest(current, previous ReleasePlanAdmin, req ReleasePlanActionRequest) CreateReleasePlanRequest {

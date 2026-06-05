@@ -110,6 +110,76 @@ func TestCreateReleasePlanDeploymentCreatesDeploymentPerArtifact(t *testing.T) {
 	}
 }
 
+func TestCreateReleasePlanDeploymentBlocksUnapprovedApprovalEnvironment(t *testing.T) {
+	store := &releasePlanDeploymentStore{
+		plan: ReleasePlanAdmin{
+			ID:                          "plan-1",
+			ProjectKey:                  "release-center",
+			ReleaseUnitID:               "unit-1",
+			UnitKey:                     "admin-web",
+			EnvironmentKey:              "prod",
+			EnvironmentRequiresApproval: true,
+			PlanKey:                     "admin-web-prod-1",
+			Status:                      "pending_approval",
+			Artifacts: []ReleasePlanArtifactAdmin{{
+				ArtifactName:       "web-dist",
+				ArtifactType:       "web_dist",
+				FileName:           "dist.tar.gz",
+				ImmutableRef:       "build_center_artifact:artifact-1",
+				AppBuildArtifactID: "artifact-1",
+			}},
+		},
+	}
+	service := &Service{store: store}
+
+	_, err := service.CreateReleasePlanDeployment(context.Background(), "plan-1", CreateReleasePlanDeploymentRequest{
+		TargetID:    "target-1",
+		DryRun:      false,
+		TriggeredBy: "tester",
+	})
+	if err == nil || !strings.Contains(err.Error(), "approved") {
+		t.Fatalf("expected approval gate error, got %v", err)
+	}
+	if len(store.deploymentRequests) != 0 {
+		t.Fatalf("unapproved plan should not create deployment requests: %#v", store.deploymentRequests)
+	}
+}
+
+func TestCreateReleasePlanDeploymentAllowsDryRunForPendingApprovalPlan(t *testing.T) {
+	store := &releasePlanDeploymentStore{
+		plan: ReleasePlanAdmin{
+			ID:                          "plan-1",
+			ProjectKey:                  "release-center",
+			ReleaseUnitID:               "unit-1",
+			UnitKey:                     "admin-web",
+			EnvironmentKey:              "prod",
+			EnvironmentRequiresApproval: true,
+			PlanKey:                     "admin-web-prod-1",
+			Status:                      "pending_approval",
+			Artifacts: []ReleasePlanArtifactAdmin{{
+				ArtifactName:       "web-dist",
+				ArtifactType:       "web_dist",
+				FileName:           "dist.tar.gz",
+				ImmutableRef:       "build_center_artifact:artifact-1",
+				AppBuildArtifactID: "artifact-1",
+			}},
+		},
+	}
+	service := &Service{store: store}
+
+	resp, err := service.CreateReleasePlanDeployment(context.Background(), "plan-1", CreateReleasePlanDeploymentRequest{
+		TargetID:    "target-1",
+		DryRun:      true,
+		TriggeredBy: "tester",
+	})
+	if err != nil {
+		t.Fatalf("CreateReleasePlanDeployment(dry-run) error = %v", err)
+	}
+	if !resp.OK || len(resp.DeploymentRecords) != 1 {
+		t.Fatalf("expected dry-run deployment record, got %#v", resp)
+	}
+}
+
 func TestCreateReleasePlanInsertsAudit(t *testing.T) {
 	store := &releasePlanAuditStore{}
 	service := &Service{cfg: Config{Channel: "stable"}, store: store}
