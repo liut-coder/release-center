@@ -5,6 +5,7 @@ import { getArtifactCenterOverview, type ArtifactCenterItem } from "@/api/artifa
 import { getBuildCenterOverview } from "@/api/buildCenter";
 import { getDeploymentTargets, type DeploymentTarget } from "@/api/deployments";
 import {
+  approveReleasePlan,
   createReleasePlan,
   createReleasePlanDeployment,
   createReleaseUnit,
@@ -54,7 +55,7 @@ const targetTypeOptions = [
 const rolloutOptions = ["5", "10", "20", "50", "100"];
 const channelOptions = ["dev", "internal", "beta", "stable", "emergency"];
 
-type PlanAction = "publish" | "pause" | "rollback" | "rollback_deploy";
+type PlanAction = "publish" | "approve" | "pause" | "rollback" | "rollback_deploy";
 
 export function ReleasePlansPanel() {
   const [projectKey, setProjectKey] = useState("release-center");
@@ -200,6 +201,7 @@ export function ReleasePlansPanel() {
         metadata: { source: "admin_web", action },
       };
       if (action === "publish") return publishReleasePlan(plan.id, payload);
+      if (action === "approve") return approveReleasePlan(plan.id, payload);
       if (action === "pause") return pauseReleasePlan(plan.id, payload);
       return rollbackReleasePlan(plan.id, payload);
     },
@@ -302,7 +304,7 @@ export function ReleasePlansPanel() {
         <Metric label="发布单元" value={releaseUnits.length} note={`${projectKeys.length} 个项目 / ${countEnabledUnits(releaseUnits)} 个启用`} />
         <Metric label="环境" value={environments.length} note={environments.map((item) => item.environment_key).join(" / ") || "-"} />
         <Metric label="发布计划" value={releasePlans.length} note={`${countPlansByStatus(releasePlans, "released")} 个已发布`} />
-        <Metric label="待处理" value={countPendingPlans(releasePlans)} note="draft / scheduled / queued" />
+        <Metric label="待处理" value={countPendingPlans(releasePlans)} note="draft / scheduled / queued / pending" />
       </div>
 
       <div className="grid gap-4 xl:grid-cols-[420px_minmax(0,1fr)]">
@@ -584,6 +586,7 @@ function ReleasePlanList({
     <div className="grid gap-3">
       {plans.map((plan) => {
         const released = plan.status === "released" || plan.status === "rolling_out";
+        const pendingApproval = plan.status === "pending_approval";
         return (
           <div key={plan.id} className="rounded-lg border p-3">
             <div className="flex flex-wrap items-start justify-between gap-3">
@@ -599,9 +602,13 @@ function ReleasePlanList({
                 </div>
               </div>
               <div className="flex flex-wrap gap-2">
-                <Button variant="secondary" size="sm" onClick={() => onAction(plan, "publish")} disabled={busy || released}>
+                <Button variant="secondary" size="sm" onClick={() => onAction(plan, "publish")} disabled={busy || released || pendingApproval}>
                   <ShieldCheck className="mr-2 h-3.5 w-3.5" />
                   发布
+                </Button>
+                <Button variant="secondary" size="sm" onClick={() => onAction(plan, "approve")} disabled={busy || !pendingApproval}>
+                  <ShieldCheck className="mr-2 h-3.5 w-3.5" />
+                  审批
                 </Button>
                 <Button variant="secondary" size="sm" onClick={() => onAction(plan, "pause")} disabled={busy || !released || plan.status === "paused"}>
                   <PauseCircle className="mr-2 h-3.5 w-3.5" />
@@ -805,7 +812,7 @@ function latestPlanByUnitEnv(plans: ReleasePlan[]) {
 
 function releasePlanStatusTone(status?: ReleasePlanStatus): "default" | "success" | "warning" | "danger" {
   if (status === "released") return "success";
-  if (status === "scheduled" || status === "queued" || status === "rolling_out" || status === "paused") return "warning";
+  if (status === "scheduled" || status === "queued" || status === "pending_approval" || status === "rolling_out" || status === "paused") return "warning";
   if (status === "recalled" || status === "rolled_back" || status === "archived") return "danger";
   return "default";
 }
@@ -816,6 +823,7 @@ function releasePlanStatusLabel(status?: ReleasePlanStatus) {
       draft: "草稿",
       scheduled: "已定时",
       queued: "排队中",
+      pending_approval: "待审批",
       released: "已发布",
       rolling_out: "灰度中",
       paused: "已暂停",
@@ -854,7 +862,7 @@ function countPlansByStatus(plans: ReleasePlan[], status: ReleasePlanStatus) {
 }
 
 function countPendingPlans(plans: ReleasePlan[]) {
-  return plans.filter((plan) => ["draft", "scheduled", "queued"].includes(plan.status)).length;
+  return plans.filter((plan) => ["draft", "scheduled", "queued", "pending_approval"].includes(plan.status)).length;
 }
 
 function unique(values: string[]) {

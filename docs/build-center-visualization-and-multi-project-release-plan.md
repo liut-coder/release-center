@@ -235,6 +235,7 @@ POST /api/v1/workers/tasks/{task_id}/fail
 - 部署目标保存、部署记录创建、完成、失败和回滚都会写 `audit_events`，用于审计部署链路。
 - 构建项目、代码仓库、构建 profile、Webhook 路由和手工构建任务创建都会写 `audit_events`，用于审计构建链路。
 - prod 非 dry-run 部署会先进入 `pending_approval`，审批通过后才投递 Worker。
+- prod 发布计划发布会先进入 `pending_approval`，发布中心审批通过后才进入 `released`。
 
 外部机器最小启动方式：
 
@@ -488,7 +489,7 @@ worker 注册
 - 部署记录已支持按同目标上一条成功记录生成回滚部署，并可 dry-run 或投递 Worker。
 - 发布计划 rollback 会基于同发布单元、同环境上一条 released/rolling_out 计划生成回滚发布计划；请求带部署目标时会继续创建部署记录并按 dry-run/Worker 流程执行。
 - 构建中心配置/任务创建、发布单元/发布计划/发布计划部署、部署目标保存、部署创建、完成、失败和回滚已写入 `audit_events`。
-- prod 部署审批门禁已接入部署中心：非 dry-run 先落 `pending_approval` 记录，批准后投递 Worker。
+- prod 审批门禁已接入发布计划和部署中心：发布计划先落 `pending_approval`，审批后进入 released；非 dry-run 部署先落 `pending_approval` 记录，批准后投递 Worker。
 
 ## 9. 当前分支建议范围
 
@@ -560,5 +561,5 @@ origin=https://github.com/liut-coder/release-center.git
 - Cloudflare 真实执行器：提供 worker 侧 wrangler 执行脚本、凭据注入约定、Pages/Workers/R2 smoke。
 - GitHub 接入验收：配置 webhook secret/route enable，完成 push/tag 自动创建构建任务的真实仓库 smoke。
 - Android 发布单元迁移：旧 APK 发布接口已开始镜像 Android release unit/release plan；下一步把前端 APK 发布页收敛进统一发布计划工作台。
-- 审批/RBAC：构建/发布/部署权限拦截和角色权限矩阵验收。
+- 审批/RBAC：发布计划和部署记录的 prod 审批门禁已落地；下一步做构建/发布/部署权限拦截和角色权限矩阵验收。
 - 回滚执行闭环：部署记录回滚、release plan 回滚计划生成和前端回滚目标选择已落地；下一步做真实生产回滚演练。

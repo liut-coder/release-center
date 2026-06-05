@@ -19,6 +19,9 @@ func TestNormalizeReleasePlanStatus(t *testing.T) {
 	if got := normalizeReleasePlanStatus(" PAUSED "); got != "paused" {
 		t.Fatalf("expected paused, got %q", got)
 	}
+	if got := normalizeReleasePlanStatus(" pending_approval "); got != "pending_approval" {
+		t.Fatalf("expected pending_approval, got %q", got)
+	}
 	if got := normalizeReleasePlanStatus("unknown"); got != "draft" {
 		t.Fatalf("expected draft fallback, got %q", got)
 	}
@@ -166,6 +169,57 @@ func TestReleasePlanActionInsertsAudit(t *testing.T) {
 	}
 }
 
+func TestReleasePlanPublishProdRequiresApproval(t *testing.T) {
+	store := &releasePlanAuditStore{
+		plan: releasePlanAuditFixture("plan-prod", "prod", true, "draft"),
+	}
+	service := &Service{store: store}
+
+	resp, err := service.ReleasePlanAction(context.Background(), "plan-prod", "publish", ReleasePlanActionRequest{
+		ApprovedBy: "release-admin",
+	})
+	if err != nil {
+		t.Fatalf("ReleasePlanAction(publish prod) error = %v", err)
+	}
+	if resp.Plan.Status != "pending_approval" {
+		t.Fatalf("expected pending approval status, got %#v", resp.Plan)
+	}
+	if resp.Plan.ApprovedBy != "" {
+		t.Fatalf("publish request should not approve the plan, got approved_by=%q", resp.Plan.ApprovedBy)
+	}
+	audit, ok := findCapturedAudit(store.audits, "release_plan.publish_request")
+	if !ok {
+		t.Fatalf("expected release plan publish request audit, got %#v", store.audits)
+	}
+	if audit.metadata["status"] != "pending_approval" || audit.metadata["approval_required"] != true || audit.metadata["requested_status"] != "released" || audit.metadata["requested_by"] != "release-admin" {
+		t.Fatalf("unexpected publish request audit metadata: %#v", audit.metadata)
+	}
+}
+
+func TestReleasePlanApprovePublishesPendingPlan(t *testing.T) {
+	store := &releasePlanAuditStore{
+		plan: releasePlanAuditFixture("plan-prod", "prod", true, "pending_approval"),
+	}
+	service := &Service{store: store}
+
+	resp, err := service.ReleasePlanAction(context.Background(), "plan-prod", "approve", ReleasePlanActionRequest{
+		ApprovedBy: "release-admin",
+	})
+	if err != nil {
+		t.Fatalf("ReleasePlanAction(approve) error = %v", err)
+	}
+	if resp.Plan.Status != "released" || resp.Plan.ApprovedBy != "release-admin" {
+		t.Fatalf("expected approved released plan, got %#v", resp.Plan)
+	}
+	audit, ok := findCapturedAudit(store.audits, "release_plan.approve")
+	if !ok {
+		t.Fatalf("expected release plan approve audit, got %#v", store.audits)
+	}
+	if audit.metadata["status"] != "released" || audit.metadata["approved_by"] != "release-admin" {
+		t.Fatalf("unexpected approve audit metadata: %#v", audit.metadata)
+	}
+}
+
 func TestReleasePlanRollbackCreatesPlanFromPreviousRelease(t *testing.T) {
 	store := newReleasePlanRollbackStore()
 	service := &Service{store: store}
@@ -272,6 +326,7 @@ func (s *releasePlanDeploymentStore) InsertAudit(_ context.Context, action, targ
 type releasePlanAuditStore struct {
 	Store
 	ReleasePlanStore
+	plan   ReleasePlanAdmin
 	audits []capturedAudit
 }
 
@@ -287,7 +342,7 @@ func (s *releasePlanAuditStore) InsertAudit(_ context.Context, action, targetTyp
 }
 
 func (s *releasePlanAuditStore) CreateReleasePlan(_ context.Context, req CreateReleasePlanRequest) (ReleasePlanAdmin, error) {
-	return ReleasePlanAdmin{
+	plan := ReleasePlanAdmin{
 		ID:                "plan-1",
 		ProjectID:         "project-1",
 		ProjectKey:        req.ProjectKey,
@@ -314,30 +369,49 @@ func (s *releasePlanAuditStore) CreateReleasePlan(_ context.Context, req CreateR
 			FileName:     req.Artifacts[0].FileName,
 			ImmutableRef: req.Artifacts[0].ImmutableRef,
 		}},
-	}, nil
+	}
+	s.plan = plan
+	return plan, nil
+}
+
+func (s *releasePlanAuditStore) ReleasePlan(_ context.Context, planID string) (ReleasePlanAdmin, error) {
+	if s.plan.ID == "" {
+		s.plan = releasePlanAuditFixture(planID, "dev", false, "draft")
+	}
+	return s.plan, nil
 }
 
 func (s *releasePlanAuditStore) UpdateReleasePlanStatus(_ context.Context, planID, status string, req ReleasePlanActionRequest) (ReleasePlanAdmin, error) {
+	if s.plan.ID == "" {
+		s.plan = releasePlanAuditFixture(planID, "dev", false, "draft")
+	}
+	s.plan.ID = planID
+	s.plan.Status = status
+	s.plan.ApprovedBy = req.ApprovedBy
+	return s.plan, nil
+}
+
+func releasePlanAuditFixture(planID, environmentKey string, requiresApproval bool, status string) ReleasePlanAdmin {
 	return ReleasePlanAdmin{
-		ID:                planID,
-		ProjectID:         "project-1",
-		ProjectKey:        "release-center",
-		ReleaseUnitID:     "unit-1",
-		UnitKey:           "admin-web",
-		UnitType:          "web",
-		EnvironmentID:     "env-1",
-		EnvironmentKey:    "prod",
-		PlanKey:           "admin-web-prod-1",
-		VersionName:       "1.2.3",
-		BuildNumber:       42,
-		GitCommit:         "abc123",
-		Channel:           "stable",
-		Status:            status,
-		RolloutPercentage: 100,
-		TargetType:        "all",
-		CreatedBy:         "tester",
-		ApprovedBy:        req.ApprovedBy,
-	}, nil
+		ID:                          planID,
+		ProjectID:                   "project-1",
+		ProjectKey:                  "release-center",
+		ReleaseUnitID:               "unit-1",
+		UnitKey:                     "admin-web",
+		UnitType:                    "web",
+		EnvironmentID:               "env-1",
+		EnvironmentKey:              environmentKey,
+		EnvironmentRequiresApproval: requiresApproval,
+		PlanKey:                     "admin-web-" + environmentKey + "-1",
+		VersionName:                 "1.2.3",
+		BuildNumber:                 42,
+		GitCommit:                   "abc123",
+		Channel:                     "stable",
+		Status:                      status,
+		RolloutPercentage:           100,
+		TargetType:                  "all",
+		CreatedBy:                   "tester",
+	}
 }
 
 type releasePlanRollbackStore struct {

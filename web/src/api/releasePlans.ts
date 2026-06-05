@@ -7,6 +7,7 @@ export type ReleasePlanStatus =
   | "draft"
   | "scheduled"
   | "queued"
+  | "pending_approval"
   | "released"
   | "rolling_out"
   | "paused"
@@ -65,6 +66,7 @@ export interface ReleasePlan {
   unit_type?: ReleaseUnitType;
   environment_id: string;
   environment_key?: string;
+  environment_requires_approval?: boolean;
   plan_key: string;
   title: string;
   description?: string;
@@ -181,6 +183,10 @@ export function pauseReleasePlan(planId: string, payload: ReleasePlanActionPaylo
   return releasePlanAction(planId, "pause", payload);
 }
 
+export function approveReleasePlan(planId: string, payload: ReleasePlanActionPayload = {}) {
+  return releasePlanAction(planId, "approve", payload);
+}
+
 export function rollbackReleasePlan(planId: string, payload: ReleasePlanActionPayload = {}) {
   return releasePlanAction(planId, "rollback", payload);
 }
@@ -195,7 +201,7 @@ export function createReleasePlanDeployment(planId: string, payload: CreateRelea
   );
 }
 
-function releasePlanAction(planId: string, action: "publish" | "pause" | "rollback", payload: ReleasePlanActionPayload) {
+function releasePlanAction(planId: string, action: "publish" | "approve" | "pause" | "rollback", payload: ReleasePlanActionPayload) {
   return apiRequest<{
     ok: boolean;
     plan: ReleasePlan;

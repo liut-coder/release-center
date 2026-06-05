@@ -59,6 +59,7 @@ func (h *Handler) RoutesWithOptions(opts RouteOptions) chi.Router {
 		r.Get("/admin/api/release-plans/{plan_id}", h.ReleasePlan)
 		r.Post("/admin/api/release-plans/{plan_id}/deployments", h.CreateReleasePlanDeployment)
 		r.Post("/admin/api/release-plans/{plan_id}/publish", h.ReleasePlanAction("publish"))
+		r.Post("/admin/api/release-plans/{plan_id}/approve", h.ReleasePlanAction("approve"))
 		r.Post("/admin/api/release-plans/{plan_id}/pause", h.ReleasePlanAction("pause"))
 		r.Post("/admin/api/release-plans/{plan_id}/rollback", h.ReleasePlanAction("rollback"))
 

@@ -144,12 +144,57 @@ func (s *Service) ReleasePlanAction(ctx context.Context, planID, action string, 
 	if action == "rollback" {
 		return s.rollbackReleasePlan(ctx, store, planID, req)
 	}
+	if planID == "" {
+		return ReleasePlanActionResponse{}, fmt.Errorf("plan_id is required")
+	}
+	current, err := store.ReleasePlan(ctx, planID)
+	if err != nil {
+		return ReleasePlanActionResponse{}, err
+	}
 	status := ""
 	message := "发布计划状态已更新"
+	auditAction := action
+	metadata := map[string]any{
+		"approved_by": req.ApprovedBy,
+	}
 	switch action {
 	case "publish":
+		if releasePlanRequiresApproval(current) {
+			if current.Status == "pending_approval" {
+				return ReleasePlanActionResponse{}, fmt.Errorf("release plan is already pending approval")
+			}
+			requestedBy := firstNonBlank(req.TriggeredBy, req.ApprovedBy, "admin")
+			status = "pending_approval"
+			message = "生产发布计划已提交审批"
+			auditAction = "publish_request"
+			req.Metadata = mergeMaps(req.Metadata, map[string]any{
+				"approval_required": true,
+				"requested_status":  "released",
+				"previous_status":   current.Status,
+				"requested_by":      requestedBy,
+			})
+			req.ApprovedBy = ""
+			metadata["approval_required"] = true
+			metadata["requested_status"] = "released"
+			metadata["previous_status"] = current.Status
+			metadata["requested_by"] = requestedBy
+			metadata["approved_by"] = ""
+		} else {
+			status = "released"
+			message = "发布计划已发布"
+		}
+	case "approve":
+		if current.Status != "pending_approval" {
+			return ReleasePlanActionResponse{}, fmt.Errorf("release plan is not pending approval")
+		}
+		if req.ApprovedBy == "" {
+			req.ApprovedBy = firstNonBlank(req.TriggeredBy, "admin")
+			metadata["approved_by"] = req.ApprovedBy
+		}
 		status = "released"
-		message = "发布计划已发布"
+		message = "发布计划已审批发布"
+		metadata["approval_required"] = releasePlanRequiresApproval(current)
+		metadata["previous_status"] = current.Status
 	case "pause":
 		status = "paused"
 		message = "发布计划已暂停"
@@ -160,9 +205,7 @@ func (s *Service) ReleasePlanAction(ctx context.Context, planID, action string, 
 	if err != nil {
 		return ReleasePlanActionResponse{}, err
 	}
-	s.insertAudit(ctx, "release_plan."+action, "release_plan", plan.ID, message, releasePlanAuditMetadata(plan, map[string]any{
-		"approved_by": req.ApprovedBy,
-	}))
+	s.insertAudit(ctx, "release_plan."+auditAction, "release_plan", plan.ID, message, releasePlanAuditMetadata(plan, metadata))
 	return ReleasePlanActionResponse{OK: true, Plan: plan, MessageZh: message}, nil
 }
 
@@ -448,25 +491,38 @@ func releasePlanRollbackMessage(dryRun bool, workerTasks, deployments int) strin
 	return fmt.Sprintf("发布计划已回滚，已生成回滚计划和 %d 条部署记录", deployments)
 }
 
+func releasePlanRequiresApproval(plan ReleasePlanAdmin) bool {
+	if plan.EnvironmentRequiresApproval {
+		return true
+	}
+	switch strings.ToLower(strings.TrimSpace(plan.EnvironmentKey)) {
+	case "prod", "production":
+		return true
+	default:
+		return false
+	}
+}
+
 func releasePlanAuditMetadata(plan ReleasePlanAdmin, extra map[string]any) map[string]any {
 	metadata := map[string]any{
-		"project_key":        plan.ProjectKey,
-		"project_id":         plan.ProjectID,
-		"release_unit_id":    plan.ReleaseUnitID,
-		"unit_key":           plan.UnitKey,
-		"unit_type":          plan.UnitType,
-		"environment_id":     plan.EnvironmentID,
-		"environment_key":    plan.EnvironmentKey,
-		"plan_key":           plan.PlanKey,
-		"version_name":       plan.VersionName,
-		"build_number":       plan.BuildNumber,
-		"git_commit":         plan.GitCommit,
-		"channel":            plan.Channel,
-		"status":             plan.Status,
-		"rollout_percentage": plan.RolloutPercentage,
-		"target_type":        plan.TargetType,
-		"target_value":       plan.TargetValue,
-		"created_by":         plan.CreatedBy,
+		"project_key":                   plan.ProjectKey,
+		"project_id":                    plan.ProjectID,
+		"release_unit_id":               plan.ReleaseUnitID,
+		"unit_key":                      plan.UnitKey,
+		"unit_type":                     plan.UnitType,
+		"environment_id":                plan.EnvironmentID,
+		"environment_key":               plan.EnvironmentKey,
+		"environment_requires_approval": plan.EnvironmentRequiresApproval,
+		"plan_key":                      plan.PlanKey,
+		"version_name":                  plan.VersionName,
+		"build_number":                  plan.BuildNumber,
+		"git_commit":                    plan.GitCommit,
+		"channel":                       plan.Channel,
+		"status":                        plan.Status,
+		"rollout_percentage":            plan.RolloutPercentage,
+		"target_type":                   plan.TargetType,
+		"target_value":                  plan.TargetValue,
+		"created_by":                    plan.CreatedBy,
 	}
 	for key, value := range extra {
 		metadata[key] = value
@@ -503,7 +559,7 @@ func normalizeReleaseUnitType(unitType string) string {
 func normalizeReleasePlanStatus(status string) string {
 	status = strings.ToLower(strings.TrimSpace(status))
 	switch status {
-	case "draft", "scheduled", "queued", "released", "rolling_out", "paused", "recalled", "rolled_back", "archived":
+	case "draft", "scheduled", "queued", "pending_approval", "released", "rolling_out", "paused", "recalled", "rolled_back", "archived":
 		return status
 	default:
 		return "draft"

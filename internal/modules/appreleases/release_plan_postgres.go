@@ -277,7 +277,7 @@ func (s *PostgresStore) listReleasePlans(ctx context.Context, extraWhere string,
 	rows, err := s.db.Query(ctx, `
 		select rp.id::text, rp.project_id::text, p.project_key,
 		       rp.release_unit_id::text, ru.unit_key, ru.unit_type,
-		       rp.environment_id::text, re.environment_key,
+		       rp.environment_id::text, re.environment_key, re.requires_approval,
 		       rp.plan_key, rp.title, rp.description, rp.version_name,
 		       rp.build_number, rp.git_commit, rp.channel, rp.status,
 		       rp.rollout_percentage, rp.target_type, rp.target_value,
@@ -354,7 +354,7 @@ func scanReleasePlan(row pgx.Row) (ReleasePlanAdmin, error) {
 	var pausedAt pgtype.Timestamptz
 	err := row.Scan(&plan.ID, &plan.ProjectID, &plan.ProjectKey,
 		&plan.ReleaseUnitID, &plan.UnitKey, &plan.UnitType,
-		&plan.EnvironmentID, &plan.EnvironmentKey, &plan.PlanKey,
+		&plan.EnvironmentID, &plan.EnvironmentKey, &plan.EnvironmentRequiresApproval, &plan.PlanKey,
 		&plan.Title, &plan.Description, &plan.VersionName, &plan.BuildNumber,
 		&plan.GitCommit, &plan.Channel, &plan.Status, &plan.RolloutPercentage,
 		&plan.TargetType, &plan.TargetValue, &scheduledAt,
