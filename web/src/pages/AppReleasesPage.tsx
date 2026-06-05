@@ -53,6 +53,7 @@ import {
   type ReleaseQualityMetric,
   type UpdateReleaseNotesPayload,
 } from "@/api/appReleases";
+import { getAdminIdentity } from "@/api/client";
 import { MockBadge } from "@/components/common/MockBadge";
 import { QrCodeSvg } from "@/components/common/QrCodeSvg";
 import { PageHeader } from "@/components/layout/PageHeader";
@@ -66,6 +67,7 @@ import { Switch } from "@/components/ui/Switch";
 import { Table, Td, Th } from "@/components/ui/Table";
 import { cn } from "@/lib/cn";
 import { formatDateTime } from "@/lib/format";
+import { hasPermission, missingPermissionText } from "@/lib/permissions";
 import { ReleasePlansPanel, type ReleasePlanDraftSeed } from "@/pages/ReleasePlansPanel";
 
 const channels = ["dev", "internal", "beta", "stable", "emergency"];
@@ -1026,6 +1028,7 @@ function AppsOverview({
   onEnableApp: (app: AppInfo) => void;
   onDisableApp: (app: AppInfo) => void;
 }) {
+  const canReleaseWrite = hasPermission(getAdminIdentity().role, "release:write");
   const rows = apps.length
     ? apps
     : [
@@ -1050,7 +1053,7 @@ function AppsOverview({
         <Input placeholder="应用名称" value={appName} onChange={(event) => setAppName(event.target.value)} />
         <Input placeholder="平台" value={appPlatform} onChange={(event) => setAppPlatform(event.target.value)} />
         <Input className="md:col-span-2" placeholder="包名" value={appPackageName} onChange={(event) => setAppPackageName(event.target.value)} />
-        <Button onClick={onCreateApp} disabled={Boolean(appValidation) || appPending}>
+        <Button onClick={onCreateApp} disabled={Boolean(appValidation) || appPending || !canReleaseWrite} title={!canReleaseWrite ? missingPermissionText("release:write") : undefined}>
           {appPending ? "保存中" : "保存应用"}
         </Button>
         <Input className="md:col-span-3" placeholder="描述" value={appDescription} onChange={(event) => setAppDescription(event.target.value)} />
@@ -1087,7 +1090,8 @@ function AppsOverview({
                 <Button
                   variant="secondary"
                   size="sm"
-                  disabled={appActionPending || app.id === "app-current"}
+                  disabled={appActionPending || app.id === "app-current" || !canReleaseWrite}
+                  title={!canReleaseWrite ? missingPermissionText("release:write") : undefined}
                   onClick={() => (app.enabled === false ? onEnableApp(app) : onDisableApp(app))}
                 >
                   {app.enabled === false ? "启用" : "停用"}
@@ -1156,6 +1160,9 @@ function BuildsPanel({
   onCreateRelease: (job: AppReleaseBuildJob) => void;
   onCreateReleasePlan: (job: AppReleaseBuildJob) => void;
 }) {
+  const role = getAdminIdentity().role;
+  const canBuildWrite = hasPermission(role, "build:write");
+  const canReleaseWrite = hasPermission(role, "release:write");
   return (
     <div className="grid gap-4 xl:grid-cols-[360px_minmax(0,1fr)]">
       <Card>
@@ -1192,7 +1199,7 @@ function BuildsPanel({
           />
           {buildApkFile ? <div className="text-xs text-muted-foreground">{buildApkFile.name}</div> : null}
           {buildValidation ? <InlineWarning text={buildValidation} /> : null}
-          <Button onClick={onBuild} disabled={Boolean(buildValidation) || buildPending}>
+          <Button onClick={onBuild} disabled={Boolean(buildValidation) || buildPending || !canBuildWrite} title={!canBuildWrite ? missingPermissionText("build:write") : undefined}>
             <Rocket className="mr-2 h-4 w-4" />
             {buildPending ? "提交中" : "创建构建任务"}
           </Button>
@@ -1211,7 +1218,7 @@ function BuildsPanel({
             <div className="font-medium">构建记录</div>
             <Badge>{buildJobs.length} 条</Badge>
           </div>
-          <BuildJobsTable jobs={buildJobs} onCreateRelease={onCreateRelease} onCreateReleasePlan={onCreateReleasePlan} />
+          <BuildJobsTable jobs={buildJobs} canReleaseWrite={canReleaseWrite} onCreateRelease={onCreateRelease} onCreateReleasePlan={onCreateReleasePlan} />
         </Card>
       </div>
     </div>
@@ -1301,6 +1308,7 @@ function AppReleasePanel({
   onAdjustRollout: (release: AppRelease) => void;
   onEditNotes: (release: AppRelease) => void;
 }) {
+  const canReleaseWrite = hasPermission(getAdminIdentity().role, "release:write");
   return (
     <div className="grid gap-4 xl:grid-cols-[420px_minmax(0,1fr)]">
       <Card>
@@ -1380,7 +1388,7 @@ function AppReleasePanel({
           </div>
           <ToggleRow label="阻止旧版本执行任务" checked={blockOldVersions} onCheckedChange={setBlockOldVersions} />
           {releaseValidation ? <InlineWarning text={releaseValidation} /> : null}
-          <Button onClick={onCreate} disabled={Boolean(releaseValidation) || createPending}>
+          <Button onClick={onCreate} disabled={Boolean(releaseValidation) || createPending || !canReleaseWrite} title={!canReleaseWrite ? missingPermissionText("release:write") : undefined}>
             <ShieldCheck className="mr-2 h-4 w-4" />
             {createPending ? "创建中" : "创建发布草稿"}
           </Button>
@@ -1477,6 +1485,7 @@ function ResourcePanel({
   onAdjustRollout: (resource: AppResourceVersion) => void;
   onEditNotes: (resource: AppResourceVersion) => void;
 }) {
+  const canReleaseWrite = hasPermission(getAdminIdentity().role, "release:write");
   return (
     <div className="grid gap-4 xl:grid-cols-[420px_minmax(0,1fr)]">
       <Card>
@@ -1531,7 +1540,7 @@ function ResourcePanel({
             </div>
           ) : null}
           {resourceValidation ? <InlineWarning text={resourceValidation} /> : null}
-          <Button onClick={onCreate} disabled={Boolean(resourceValidation) || createPending}>
+          <Button onClick={onCreate} disabled={Boolean(resourceValidation) || createPending || !canReleaseWrite} title={!canReleaseWrite ? missingPermissionText("release:write") : undefined}>
             <Upload className="mr-2 h-4 w-4" />
             {createPending ? "创建中" : "创建资源版本"}
           </Button>
@@ -2031,10 +2040,12 @@ function BuildJobPanel({ job, compact = false }: { job: AppReleaseBuildJob; comp
 
 function BuildJobsTable({
   jobs,
+  canReleaseWrite,
   onCreateRelease,
   onCreateReleasePlan,
 }: {
   jobs: AppReleaseBuildJob[];
+  canReleaseWrite: boolean;
   onCreateRelease: (job: AppReleaseBuildJob) => void;
   onCreateReleasePlan: (job: AppReleaseBuildJob) => void;
 }) {
@@ -2070,10 +2081,10 @@ function BuildJobsTable({
             <Td>{formatDateTime(job.finished_at || job.started_at || job.created_at)}</Td>
             <Td>
               <div className="flex flex-wrap gap-2">
-                <Button variant="secondary" size="sm" disabled={job.status !== "success"} onClick={() => onCreateReleasePlan(job)}>
+                <Button variant="secondary" size="sm" disabled={job.status !== "success" || !canReleaseWrite} title={!canReleaseWrite ? missingPermissionText("release:write") : undefined} onClick={() => onCreateReleasePlan(job)}>
                   发布计划
                 </Button>
-                <Button variant="secondary" size="sm" disabled={job.status !== "success"} onClick={() => onCreateRelease(job)}>
+                <Button variant="secondary" size="sm" disabled={job.status !== "success" || !canReleaseWrite} title={!canReleaseWrite ? missingPermissionText("release:write") : undefined} onClick={() => onCreateRelease(job)}>
                   创建发布
                 </Button>
               </div>
@@ -2151,6 +2162,9 @@ function ReleaseRow({
   onEditNotes: () => void;
 }) {
   const published = release.is_published || release.status === "released" || release.status === "rolling_out";
+  const role = getAdminIdentity().role;
+  const canReleaseWrite = hasPermission(role, "release:write");
+  const canReleaseRollback = hasPermission(role, "release:rollback");
   return (
     <div className="rounded-lg border p-3">
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -2172,28 +2186,28 @@ function ReleaseRow({
             <Download className="mr-2 h-3.5 w-3.5" />
             下载
           </Button>
-          <Button variant="secondary" size="sm" onClick={() => onAction("publish")} disabled={busy || published}>
+          <Button variant="secondary" size="sm" onClick={() => onAction("publish")} disabled={busy || published || !canReleaseWrite} title={!canReleaseWrite ? missingPermissionText("release:write") : undefined}>
             <ShieldCheck className="mr-2 h-3.5 w-3.5" />
             发布
           </Button>
-          <Button variant="secondary" size="sm" onClick={() => onAction("pause")} disabled={busy || !published || release.status === "paused"}>
+          <Button variant="secondary" size="sm" onClick={() => onAction("pause")} disabled={busy || !published || release.status === "paused" || !canReleaseWrite} title={!canReleaseWrite ? missingPermissionText("release:write") : undefined}>
             <PauseCircle className="mr-2 h-3.5 w-3.5" />
             暂停
           </Button>
-          <Button variant="secondary" size="sm" onClick={() => onAction("rollback")} disabled={busy || release.is_latest}>
+          <Button variant="secondary" size="sm" onClick={() => onAction("rollback")} disabled={busy || release.is_latest || !canReleaseRollback} title={!canReleaseRollback ? missingPermissionText("release:rollback") : undefined}>
             <History className="mr-2 h-3.5 w-3.5" />
             回滚
           </Button>
-          <Button variant="secondary" size="sm" onClick={onAdjustRollout} disabled={busy}>
+          <Button variant="secondary" size="sm" onClick={onAdjustRollout} disabled={busy || !canReleaseWrite} title={!canReleaseWrite ? missingPermissionText("release:write") : undefined}>
             灰度
           </Button>
-          <Button variant="secondary" size="sm" onClick={onEditNotes} disabled={busy}>
+          <Button variant="secondary" size="sm" onClick={onEditNotes} disabled={busy || !canReleaseWrite} title={!canReleaseWrite ? missingPermissionText("release:write") : undefined}>
             编辑说明
           </Button>
-          <Button variant="secondary" size="sm" onClick={() => onAction("recall")} disabled={busy || !published}>
+          <Button variant="secondary" size="sm" onClick={() => onAction("recall")} disabled={busy || !published || !canReleaseWrite} title={!canReleaseWrite ? missingPermissionText("release:write") : undefined}>
             撤回
           </Button>
-          <Button variant="secondary" size="sm" onClick={() => onAction("unpublish")} disabled={busy || !published}>
+          <Button variant="secondary" size="sm" onClick={() => onAction("unpublish")} disabled={busy || !published || !canReleaseWrite} title={!canReleaseWrite ? missingPermissionText("release:write") : undefined}>
             下架
           </Button>
         </div>
@@ -2228,6 +2242,9 @@ function ResourceRow({
 }) {
   const released = resource.status === "released" || resource.status === "rolling_out";
   const paused = resource.status === "paused";
+  const role = getAdminIdentity().role;
+  const canReleaseWrite = hasPermission(role, "release:write");
+  const canReleaseRollback = hasPermission(role, "release:rollback");
   return (
     <div className="rounded-lg border p-3">
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -2254,19 +2271,19 @@ function ResourceRow({
           <Button variant="secondary" size="sm" onClick={() => window.open(resource.manifest_url, "_blank")}>
             Manifest
           </Button>
-          <Button variant="secondary" size="sm" onClick={() => onAction("publish-resource")} disabled={busy || released}>
+          <Button variant="secondary" size="sm" onClick={() => onAction("publish-resource")} disabled={busy || released || !canReleaseWrite} title={!canReleaseWrite ? missingPermissionText("release:write") : undefined}>
             发布
           </Button>
-          <Button variant="secondary" size="sm" onClick={() => onAction("pause-resource")} disabled={busy || !released || resource.status === "paused"}>
+          <Button variant="secondary" size="sm" onClick={() => onAction("pause-resource")} disabled={busy || !released || resource.status === "paused" || !canReleaseWrite} title={!canReleaseWrite ? missingPermissionText("release:write") : undefined}>
             暂停
           </Button>
-          <Button variant="secondary" size="sm" onClick={() => onAction("rollback-resource")} disabled={busy}>
+          <Button variant="secondary" size="sm" onClick={() => onAction("rollback-resource")} disabled={busy || !canReleaseRollback} title={!canReleaseRollback ? missingPermissionText("release:rollback") : undefined}>
             回滚
           </Button>
-          <Button variant="secondary" size="sm" onClick={onAdjustRollout} disabled={busy}>
+          <Button variant="secondary" size="sm" onClick={onAdjustRollout} disabled={busy || !canReleaseWrite} title={!canReleaseWrite ? missingPermissionText("release:write") : undefined}>
             灰度
           </Button>
-          <Button variant="secondary" size="sm" onClick={onEditNotes} disabled={busy}>
+          <Button variant="secondary" size="sm" onClick={onEditNotes} disabled={busy || !canReleaseWrite} title={!canReleaseWrite ? missingPermissionText("release:write") : undefined}>
             编辑说明
           </Button>
         </div>

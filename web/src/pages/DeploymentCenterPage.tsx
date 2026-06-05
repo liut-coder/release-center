@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { CheckCircle2, Cloud, History, Play, RefreshCw, Server, TerminalSquare, XCircle } from "lucide-react";
+import { getAdminIdentity } from "@/api/client";
 import { getArtifactCenterOverview, type ArtifactCenterItem } from "@/api/artifacts";
 import { getBuildCenterOverview } from "@/api/buildCenter";
 import {
@@ -26,6 +27,7 @@ import { Input } from "@/components/ui/Input";
 import { Switch } from "@/components/ui/Switch";
 import { Table, Td, Th } from "@/components/ui/Table";
 import { formatDateTime } from "@/lib/format";
+import { hasPermission, missingPermissionText } from "@/lib/permissions";
 
 const providerOptions: Array<{ value: DeploymentProvider; label: string }> = [
   { value: "cloudflare_pages", label: "Cloudflare Pages" },
@@ -68,6 +70,10 @@ export function DeploymentCenterPage() {
   const [filter, setFilter] = useState("全部");
   const [message, setMessage] = useState("部署中心已就绪。");
   const [messageTone, setMessageTone] = useState<"default" | "success" | "warning" | "danger">("default");
+  const role = getAdminIdentity().role;
+  const canDeployWrite = hasPermission(role, "deploy:write");
+  const canDeployApprove = hasPermission(role, "deploy:approve");
+  const canDeployRollback = hasPermission(role, "deploy:rollback");
 
   const projectsQuery = useQuery({
     queryKey: ["deployment-center-projects"],
@@ -328,7 +334,11 @@ export function DeploymentCenterPage() {
                 <Switch checked={targetEnabled} onCheckedChange={setTargetEnabled} aria-label="启用部署目标" />
               </div>
               {targetValidation ? <InlineWarning text={targetValidation} /> : null}
-              <Button onClick={() => createTargetMutation.mutate()} disabled={Boolean(targetValidation) || createTargetMutation.isPending}>
+              <Button
+                onClick={() => createTargetMutation.mutate()}
+                disabled={Boolean(targetValidation) || createTargetMutation.isPending || !canDeployWrite}
+                title={!canDeployWrite ? missingPermissionText("deploy:write") : undefined}
+              >
                 {createTargetMutation.isPending ? "保存中" : "保存部署目标"}
               </Button>
             </div>
@@ -381,7 +391,11 @@ export function DeploymentCenterPage() {
                 <Switch checked={deploymentDryRun} onCheckedChange={setDeploymentDryRun} aria-label="Dry-run 部署" />
               </div>
               {deploymentValidation ? <InlineWarning text={deploymentValidation} /> : null}
-              <Button onClick={() => createDeploymentMutation.mutate()} disabled={Boolean(deploymentValidation) || createDeploymentMutation.isPending}>
+              <Button
+                onClick={() => createDeploymentMutation.mutate()}
+                disabled={Boolean(deploymentValidation) || createDeploymentMutation.isPending || !canDeployWrite}
+                title={!canDeployWrite ? missingPermissionText("deploy:write") : undefined}
+              >
                 <Play className="mr-2 h-4 w-4" />
                 {createDeploymentMutation.isPending ? "创建中" : deploymentDryRun ? "创建 dry-run 部署" : "投递 Worker 部署"}
               </Button>
@@ -433,6 +447,9 @@ export function DeploymentCenterPage() {
             <DeploymentRecordsTable
               records={filteredRecords}
               busy={busy}
+              canWrite={canDeployWrite}
+              canApprove={canDeployApprove}
+              canRollback={canDeployRollback}
               onComplete={(record) => completeMutation.mutate(record)}
               onApprove={(record) => approveMutation.mutate(record)}
               onFail={(record) => failMutation.mutate(record)}
@@ -481,6 +498,9 @@ function TargetCard({ target, active, onSelect }: { target: DeploymentTarget; ac
 function DeploymentRecordsTable({
   records,
   busy,
+  canWrite,
+  canApprove,
+  canRollback,
   onComplete,
   onApprove,
   onFail,
@@ -488,6 +508,9 @@ function DeploymentRecordsTable({
 }: {
   records: DeploymentRecord[];
   busy: boolean;
+  canWrite: boolean;
+  canApprove: boolean;
+  canRollback: boolean;
   onComplete: (record: DeploymentRecord) => void;
   onApprove: (record: DeploymentRecord) => void;
   onFail: (record: DeploymentRecord) => void;
@@ -539,16 +562,16 @@ function DeploymentRecordsTable({
               <Td>{formatDeploymentTime(record)}</Td>
               <Td>
                 <div className="flex flex-wrap gap-2">
-                  <Button variant="secondary" size="sm" disabled={busy || !active} onClick={() => onComplete(record)}>
+                  <Button variant="secondary" size="sm" disabled={busy || !active || !canWrite} title={!canWrite ? missingPermissionText("deploy:write") : undefined} onClick={() => onComplete(record)}>
                     完成
                   </Button>
-                  <Button variant="secondary" size="sm" disabled={busy || record.provider_status !== "pending_approval"} onClick={() => onApprove(record)}>
+                  <Button variant="secondary" size="sm" disabled={busy || record.provider_status !== "pending_approval" || !canApprove} title={!canApprove ? missingPermissionText("deploy:approve") : undefined} onClick={() => onApprove(record)}>
                     批准
                   </Button>
-                  <Button variant="secondary" size="sm" disabled={busy || record.provider_status === "failed"} onClick={() => onFail(record)}>
+                  <Button variant="secondary" size="sm" disabled={busy || record.provider_status === "failed" || !canWrite} title={!canWrite ? missingPermissionText("deploy:write") : undefined} onClick={() => onFail(record)}>
                     失败
                   </Button>
-                  <Button variant="secondary" size="sm" disabled={busy || !canRollbackDeployment(record)} onClick={() => onRollback(record)}>
+                  <Button variant="secondary" size="sm" disabled={busy || !canRollbackDeployment(record) || !canRollback} title={!canRollback ? missingPermissionText("deploy:rollback") : undefined} onClick={() => onRollback(record)}>
                     回滚
                   </Button>
                 </div>

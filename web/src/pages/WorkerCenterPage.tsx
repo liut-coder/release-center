@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { CheckCircle2, Clock3, Cpu, Play, RefreshCw, Server, TerminalSquare, XCircle } from "lucide-react";
+import { getAdminIdentity } from "@/api/client";
 import { getBuildCenterOverview } from "@/api/buildCenter";
 import { createWorkerTask, getWorkerOverview, type BuildWorker, type WorkerTask, type WorkerTaskStatus } from "@/api/workers";
 import { PageHeader } from "@/components/layout/PageHeader";
@@ -11,6 +12,7 @@ import { Card } from "@/components/ui/Card";
 import { Input } from "@/components/ui/Input";
 import { Table, Td, Th } from "@/components/ui/Table";
 import { formatDateTime } from "@/lib/format";
+import { hasPermission, missingPermissionText } from "@/lib/permissions";
 
 const taskTypeOptions = ["build", "deploy", "verify", "artifact"];
 const actionOptions = ["all", "build", "upload", "verify", "deploy", "cloudflare_pages", "cloudflare_worker", "cloudflare_r2"];
@@ -26,6 +28,7 @@ export function WorkerCenterPage() {
   const [filter, setFilter] = useState("全部");
   const [message, setMessage] = useState("Worker 接入已就绪。");
   const [messageTone, setMessageTone] = useState<"default" | "success" | "warning" | "danger">("default");
+  const canWorkerWrite = hasPermission(getAdminIdentity().role, "worker:write");
 
   const overviewQuery = useQuery({
     queryKey: ["worker-overview"],
@@ -131,7 +134,11 @@ export function WorkerCenterPage() {
               </div>
               <Input placeholder="metadata command" value={metadataCommand} onChange={(event) => setMetadataCommand(event.target.value)} />
               {createValidation ? <InlineWarning text={createValidation} /> : null}
-              <Button onClick={() => createTaskMutation.mutate()} disabled={Boolean(createValidation) || createTaskMutation.isPending}>
+              <Button
+                onClick={() => createTaskMutation.mutate()}
+                disabled={Boolean(createValidation) || createTaskMutation.isPending || !canWorkerWrite}
+                title={!canWorkerWrite ? missingPermissionText("worker:write") : undefined}
+              >
                 <Play className="mr-2 h-4 w-4" />
                 {createTaskMutation.isPending ? "创建中" : "创建 Worker 任务"}
               </Button>

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Cloud, FileText, History, PauseCircle, RefreshCw, Rocket, Search, ShieldCheck, SlidersHorizontal, Upload } from "lucide-react";
+import { getAdminIdentity } from "@/api/client";
 import { getArtifactCenterOverview, type ArtifactCenterItem } from "@/api/artifacts";
 import { getBuildCenterOverview } from "@/api/buildCenter";
 import { getDeploymentTargets, type DeploymentTarget } from "@/api/deployments";
@@ -28,6 +29,7 @@ import { Input } from "@/components/ui/Input";
 import { Switch } from "@/components/ui/Switch";
 import { Table, Td, Th } from "@/components/ui/Table";
 import { formatDateTime } from "@/lib/format";
+import { hasPermission, missingPermissionText } from "@/lib/permissions";
 
 const RELEASE_PLANS_QUERY_KEY = ["release-plans"] as const;
 const BUILD_CENTER_PROJECTS_QUERY_KEY = ["release-plans-build-center-projects"] as const;
@@ -109,6 +111,13 @@ export function ReleasePlansPanel({ draftSeed }: { draftSeed?: ReleasePlanDraftS
   const [query, setQuery] = useState("");
   const [message, setMessage] = useState("发布计划已就绪。");
   const [messageTone, setMessageTone] = useState<"default" | "success" | "warning" | "danger">("default");
+  const role = getAdminIdentity().role;
+  const permissions = {
+    releaseWrite: hasPermission(role, "release:write"),
+    releaseApprove: hasPermission(role, "release:approve"),
+    releaseRollback: hasPermission(role, "release:rollback"),
+    deployWrite: hasPermission(role, "deploy:write"),
+  };
 
   useEffect(() => {
     if (!draftSeed?.seedKey) return;
@@ -434,7 +443,11 @@ export function ReleasePlansPanel({ draftSeed }: { draftSeed?: ReleasePlanDraftS
                 </div>
               </div>
               {createPlanValidation ? <InlineWarning text={createPlanValidation} /> : null}
-              <Button onClick={() => createPlanMutation.mutate()} disabled={Boolean(createPlanValidation) || createPlanMutation.isPending}>
+              <Button
+                onClick={() => createPlanMutation.mutate()}
+                disabled={Boolean(createPlanValidation) || createPlanMutation.isPending || !permissions.releaseWrite}
+                title={!permissions.releaseWrite ? missingPermissionText("release:write") : undefined}
+              >
                 <FileText className="mr-2 h-4 w-4" />
                 {createPlanMutation.isPending ? "创建中" : "创建发布计划"}
               </Button>
@@ -462,7 +475,12 @@ export function ReleasePlansPanel({ draftSeed }: { draftSeed?: ReleasePlanDraftS
               </div>
               <Select label="默认渠道" value={newUnitChannel} onChange={setNewUnitChannel} options={channelOptions} />
               {createUnitValidation ? <InlineWarning text={createUnitValidation} /> : null}
-              <Button variant="secondary" onClick={() => createUnitMutation.mutate()} disabled={Boolean(createUnitValidation) || createUnitMutation.isPending}>
+              <Button
+                variant="secondary"
+                onClick={() => createUnitMutation.mutate()}
+                disabled={Boolean(createUnitValidation) || createUnitMutation.isPending || !permissions.releaseWrite}
+                title={!permissions.releaseWrite ? missingPermissionText("release:write") : undefined}
+              >
                 {createUnitMutation.isPending ? "保存中" : "保存发布单元"}
               </Button>
               <div className="grid gap-2 pt-2">
@@ -533,6 +551,7 @@ export function ReleasePlansPanel({ draftSeed }: { draftSeed?: ReleasePlanDraftS
               busy={busy}
               deploymentTargetId={effectiveDeploymentTargetId}
               deploymentDryRun={deploymentDryRun}
+              permissions={permissions}
               onAction={(plan, action) => planActionMutation.mutate({ plan, action })}
               onDeploy={(plan) => deploymentMutation.mutate(plan)}
             />
@@ -615,6 +634,7 @@ function ReleasePlanList({
   busy,
   deploymentTargetId,
   deploymentDryRun,
+  permissions,
   onAction,
   onDeploy,
 }: {
@@ -622,6 +642,7 @@ function ReleasePlanList({
   busy: boolean;
   deploymentTargetId: string;
   deploymentDryRun: boolean;
+  permissions: { releaseWrite: boolean; releaseApprove: boolean; releaseRollback: boolean; deployWrite: boolean };
   onAction: (plan: ReleasePlan, action: PlanAction) => void;
   onDeploy: (plan: ReleasePlan) => void;
 }) {
@@ -648,19 +669,19 @@ function ReleasePlanList({
                 </div>
               </div>
               <div className="flex flex-wrap gap-2">
-                <Button variant="secondary" size="sm" onClick={() => onAction(plan, "publish")} disabled={busy || released || pendingApproval}>
+                <Button variant="secondary" size="sm" onClick={() => onAction(plan, "publish")} disabled={busy || released || pendingApproval || !permissions.releaseWrite} title={!permissions.releaseWrite ? missingPermissionText("release:write") : undefined}>
                   <ShieldCheck className="mr-2 h-3.5 w-3.5" />
                   发布
                 </Button>
-                <Button variant="secondary" size="sm" onClick={() => onAction(plan, "approve")} disabled={busy || !pendingApproval}>
+                <Button variant="secondary" size="sm" onClick={() => onAction(plan, "approve")} disabled={busy || !pendingApproval || !permissions.releaseApprove} title={!permissions.releaseApprove ? missingPermissionText("release:approve") : undefined}>
                   <ShieldCheck className="mr-2 h-3.5 w-3.5" />
                   审批
                 </Button>
-                <Button variant="secondary" size="sm" onClick={() => onAction(plan, "pause")} disabled={busy || !released || plan.status === "paused"}>
+                <Button variant="secondary" size="sm" onClick={() => onAction(plan, "pause")} disabled={busy || !released || plan.status === "paused" || !permissions.releaseWrite} title={!permissions.releaseWrite ? missingPermissionText("release:write") : undefined}>
                   <PauseCircle className="mr-2 h-3.5 w-3.5" />
                   暂停
                 </Button>
-                <Button variant="secondary" size="sm" onClick={() => onAction(plan, "rollback")} disabled={busy || plan.status === "rolled_back"}>
+                <Button variant="secondary" size="sm" onClick={() => onAction(plan, "rollback")} disabled={busy || plan.status === "rolled_back" || !permissions.releaseRollback} title={!permissions.releaseRollback ? missingPermissionText("release:rollback") : undefined}>
                   <History className="mr-2 h-3.5 w-3.5" />
                   回滚计划
                 </Button>
@@ -668,7 +689,8 @@ function ReleasePlanList({
                   variant="secondary"
                   size="sm"
                   onClick={() => onAction(plan, "rollback_deploy")}
-                  disabled={busy || !deploymentTargetId || plan.status === "rolled_back" || rollbackDeployBlockedByApproval}
+                  disabled={busy || !deploymentTargetId || plan.status === "rolled_back" || rollbackDeployBlockedByApproval || !permissions.releaseRollback}
+                  title={!permissions.releaseRollback ? missingPermissionText("release:rollback") : undefined}
                 >
                   <History className="mr-2 h-3.5 w-3.5" />
                   {deploymentDryRun ? "回滚部署" : "回滚投递"}
@@ -677,7 +699,8 @@ function ReleasePlanList({
                   variant="secondary"
                   size="sm"
                   onClick={() => onDeploy(plan)}
-                  disabled={busy || !deploymentTargetId || !(plan.artifacts?.length) || deploymentBlockedByApproval}
+                  disabled={busy || !deploymentTargetId || !(plan.artifacts?.length) || deploymentBlockedByApproval || !permissions.deployWrite}
+                  title={!permissions.deployWrite ? missingPermissionText("deploy:write") : undefined}
                 >
                   <Cloud className="mr-2 h-3.5 w-3.5" />
                   {deploymentDryRun ? "部署" : "投递"}

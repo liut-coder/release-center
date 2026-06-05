@@ -20,7 +20,13 @@ type AdminIdentity struct {
 
 var defaultRolePermissions = map[string][]string{
 	"system_admin":  {"system:*", "release:*", "build:*", "deploy:*", "worker:*", "integration:*"},
-	"release_admin": {"release:read", "release:write", "release:audit", "build:read", "build:write", "deploy:read", "deploy:write", "worker:read", "integration:read", "integration:write"},
+	"release_admin": {
+		"release:read", "release:write", "release:approve", "release:rollback", "release:audit",
+		"build:read", "build:write",
+		"deploy:read", "deploy:write", "deploy:approve", "deploy:rollback",
+		"worker:read", "worker:write",
+		"integration:read", "integration:write",
+	},
 	"release_viewer": {"release:read", "release:audit", "build:read", "deploy:read", "worker:read", "integration:read"},
 }
 

@@ -506,7 +506,7 @@ worker 注册
 - 发布计划 rollback 会基于同发布单元、同环境上一条 released/rolling_out 计划生成回滚发布计划；请求带部署目标时会继续创建部署记录并按 dry-run/Worker 流程执行。
 - 构建中心配置/任务创建、发布单元/发布计划/发布计划部署、部署目标保存、部署创建、完成、失败和回滚已写入 `audit_events`。
 - prod 审批门禁已接入发布计划和部署中心：发布计划先落 `pending_approval`，审批后进入 released；发布计划部署入口阻止未审批计划做非 dry-run 投递；非 dry-run 部署先落 `pending_approval` 记录，批准后投递 Worker。
-- 路由层 RBAC 已接入 Admin 写接口：构建、集成配置、发布、部署、Worker 任务和系统管理按 `build:*`、`integration:*`、`release:*`、`deploy:*`、`worker:*`、`system:*` 校验。内置 `system_admin`、`release_admin`、`release_viewer` 三类角色，支持精确权限和 `module:*` 通配；前端登录页可切换角色做权限矩阵 smoke。
+- 路由层 RBAC 已接入 Admin 写接口：构建、集成配置、发布、部署、Worker 任务和系统管理按 `build:*`、`integration:*`、`release:*`、`deploy:*`、`worker:*`、`system:*` 校验。内置 `system_admin`、`release_admin`、`release_viewer` 三类角色，支持精确权限和 `module:*` 通配；前端登录页可切换角色做权限矩阵 smoke，菜单和关键写按钮会按当前角色禁用并提示缺少的权限点。
 
 ## 9. 当前分支建议范围
 
@@ -579,5 +579,5 @@ origin=https://github.com/liut-coder/release-center.git
 - Cloudflare 真实执行器：提供 worker 侧 wrangler 执行脚本、凭据注入约定、Pages/Workers/R2 smoke。
 - GitHub 接入验收：配置 webhook secret/route enable，完成 push/tag 自动创建构建任务的真实仓库 smoke。
 - Android 发布单元迁移：旧 APK 发布接口已镜像 Android release unit/release plan，前端构建记录已可一键进入统一发布计划工作台；下一步逐步弱化旧 Android 发布表单。
-- 权限/RBAC：构建、发布、部署、Worker、集成配置和系统管理写接口已接入角色权限矩阵；下一步可继续做前端菜单/按钮级权限禁用。
+- 权限/RBAC：构建、发布、部署、Worker、集成配置和系统管理写接口已接入角色权限矩阵；前端系统管理菜单和关键写按钮已按角色禁用。
 - 回滚执行闭环：部署记录回滚、release plan 回滚计划生成和前端回滚目标选择已落地；下一步做真实生产回滚演练。

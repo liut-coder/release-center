@@ -54,6 +54,7 @@ import { Input } from "@/components/ui/Input";
 import { Switch } from "@/components/ui/Switch";
 import { Table, Td, Th } from "@/components/ui/Table";
 import { cn } from "@/lib/cn";
+import { hasPermission, missingPermissionText } from "@/lib/permissions";
 
 type AdminPageKey =
   | "dashboard"
@@ -127,6 +128,7 @@ type SystemPageRenderContext = {
   loading: boolean;
   error: unknown;
   actions: SystemManagementActions;
+  role: string;
 };
 
 export function App() {
@@ -177,18 +179,24 @@ export function App() {
               <div key={group.group}>
                 <div className="px-2 pb-2 text-[11px] font-medium text-muted-foreground">{group.group}</div>
                 <div className="space-y-1">
-                  {group.items.map((item) => (
-                    <NavButton
-                      key={item.key}
-                      active={activePage === item.key}
-                      icon={item.icon}
-                      label={item.label}
-                      onClick={() => {
-                        setActivePage(item.key);
-                        setSidebarOpen(false);
-                      }}
-                    />
-                  ))}
+                  {group.items.map((item) => {
+                    const blocked = pageWritePermission(item.key)?.startsWith("system:") && !hasPermission(session.role, "system:*");
+                    return (
+                      <NavButton
+                        key={item.key}
+                        active={activePage === item.key}
+                        icon={item.icon}
+                        label={item.label}
+                        disabled={blocked}
+                        title={blocked ? missingPermissionText(pageWritePermission(item.key) || "system:*") : undefined}
+                        onClick={() => {
+                          if (blocked) return;
+                          setActivePage(item.key);
+                          setSidebarOpen(false);
+                        }}
+                      />
+                    );
+                  })}
                 </div>
               </div>
             ))}
@@ -230,6 +238,7 @@ export function App() {
               loading: systemQuery.isLoading,
               error: systemQuery.error,
               actions: systemActions,
+              role: session.role,
             })}
           </div>
         </section>
@@ -383,14 +392,17 @@ function roleLabel(role: string) {
   return role || "未知角色";
 }
 
-function NavButton({ active, icon: Icon, label, onClick }: { active: boolean; icon: typeof Home; label: string; onClick: () => void }) {
+function NavButton({ active, disabled, icon: Icon, label, onClick, title }: { active: boolean; disabled?: boolean; icon: typeof Home; label: string; onClick: () => void; title?: string }) {
   return (
     <button
       className={cn(
         "flex h-9 w-full items-center gap-2 rounded-lg px-2.5 text-left text-xs font-medium transition",
         active ? "bg-black text-white" : "text-muted-foreground hover:bg-muted hover:text-foreground",
+        disabled && "cursor-not-allowed opacity-45 hover:bg-transparent hover:text-muted-foreground",
       )}
+      disabled={disabled}
       onClick={onClick}
+      title={title}
     >
       <Icon className="h-4 w-4 shrink-0" />
       <span className="truncate">{label}</span>
@@ -405,16 +417,25 @@ function renderPage(activePage: AdminPageKey, setActivePage: (page: AdminPageKey
   if (activePage === "worker-center") return <WorkerCenterPage />;
   if (activePage === "deployment-center") return <DeploymentCenterPage />;
   if (activePage === "integration-config") return <IntegrationConfigPage />;
-  if (activePage === "users") return <UsersPage users={context.system.users} loading={context.loading} error={context.error} actions={context.actions} />;
-  if (activePage === "roles") return <RolesPage roles={context.system.roles} loading={context.loading} error={context.error} actions={context.actions} />;
+  if (activePage === "users") return <UsersPage users={context.system.users} loading={context.loading} error={context.error} actions={context.actions} canWrite={hasPermission(context.role, "system:user:write")} />;
+  if (activePage === "roles") return <RolesPage roles={context.system.roles} loading={context.loading} error={context.error} actions={context.actions} canWrite={hasPermission(context.role, "system:role:write")} />;
   if (activePage === "permissions") {
-    return <PermissionsPage permissions={context.system.permissions} loading={context.loading} error={context.error} actions={context.actions} />;
+    return <PermissionsPage permissions={context.system.permissions} loading={context.loading} error={context.error} actions={context.actions} canWrite={hasPermission(context.role, "system:permission:write")} />;
   }
   if (activePage === "dictionaries") {
-    return <DictionariesPage dictionaries={context.system.dictionaries} loading={context.loading} error={context.error} actions={context.actions} />;
+    return <DictionariesPage dictionaries={context.system.dictionaries} loading={context.loading} error={context.error} actions={context.actions} canWrite={hasPermission(context.role, "system:dictionary:write")} />;
   }
-  if (activePage === "menus") return <MenusPage menus={context.system.menus} loading={context.loading} error={context.error} actions={context.actions} />;
+  if (activePage === "menus") return <MenusPage menus={context.system.menus} loading={context.loading} error={context.error} actions={context.actions} canWrite={hasPermission(context.role, "system:menu:write")} />;
   return <DashboardPage system={context.system} loading={context.loading} error={context.error} onOpen={setActivePage} />;
+}
+
+function pageWritePermission(page: AdminPageKey) {
+  if (page === "users") return "system:user:write";
+  if (page === "roles") return "system:role:write";
+  if (page === "permissions") return "system:permission:write";
+  if (page === "dictionaries") return "system:dictionary:write";
+  if (page === "menus") return "system:menu:write";
+  return "";
 }
 
 function DashboardPage({ system, loading, error, onOpen }: { system: SystemManagementOverview; loading: boolean; error: unknown; onOpen: (page: AdminPageKey) => void }) {
@@ -480,7 +501,7 @@ function DashboardPage({ system, loading, error, onOpen }: { system: SystemManag
   );
 }
 
-function UsersPage({ users, loading, error, actions }: { users: SystemUser[]; loading: boolean; error: unknown; actions: SystemManagementActions }) {
+function UsersPage({ users, loading, error, actions, canWrite }: { users: SystemUser[]; loading: boolean; error: unknown; actions: SystemManagementActions; canWrite: boolean }) {
   const [query, setQuery] = useState("");
   const rows = users.filter((user) => [user.name, user.account, user.role, user.department ?? ""].join(" ").toLowerCase().includes(query.toLowerCase()));
 
@@ -491,7 +512,7 @@ function UsersPage({ users, loading, error, actions }: { users: SystemUser[]; lo
       error={error}
       actionError={actions.error}
       actions={
-        <Button onClick={actions.createUser} disabled={actions.pending}>
+        <Button onClick={actions.createUser} disabled={actions.pending || !canWrite} title={!canWrite ? missingPermissionText("system:user:write") : undefined}>
           <Users className="mr-1.5 h-4 w-4" />
           新增用户
         </Button>
@@ -525,7 +546,8 @@ function UsersPage({ users, loading, error, actions }: { users: SystemUser[]; lo
                 <Button
                   variant="secondary"
                   size="sm"
-                  disabled={actions.pending}
+                  disabled={actions.pending || !canWrite}
+                  title={!canWrite ? missingPermissionText("system:user:write") : undefined}
                   onClick={() => actions.setUserEnabled(user.id, user.status !== "enabled")}
                 >
                   {user.status === "enabled" ? "停用" : "启用"}
@@ -540,7 +562,7 @@ function UsersPage({ users, loading, error, actions }: { users: SystemUser[]; lo
   );
 }
 
-function RolesPage({ roles, loading, error, actions }: { roles: SystemRole[]; loading: boolean; error: unknown; actions: SystemManagementActions }) {
+function RolesPage({ roles, loading, error, actions, canWrite }: { roles: SystemRole[]; loading: boolean; error: unknown; actions: SystemManagementActions; canWrite: boolean }) {
   return (
     <SystemPageShell
       title="角色管理"
@@ -548,7 +570,7 @@ function RolesPage({ roles, loading, error, actions }: { roles: SystemRole[]; lo
       error={error}
       actionError={actions.error}
       actions={
-        <Button onClick={actions.createRole} disabled={actions.pending}>
+        <Button onClick={actions.createRole} disabled={actions.pending || !canWrite} title={!canWrite ? missingPermissionText("system:role:write") : undefined}>
           <Shield className="mr-1.5 h-4 w-4" />
           新增角色
         </Button>
@@ -563,7 +585,7 @@ function RolesPage({ roles, loading, error, actions }: { roles: SystemRole[]; lo
                 <div className="truncate font-medium">{role.name}</div>
                 <div className="mt-1 font-mono text-xs text-muted-foreground">{role.code}</div>
               </div>
-              <Switch checked={role.enabled} disabled={actions.pending} onCheckedChange={(checked) => actions.setRoleEnabled(role.id, checked)} />
+              <Switch checked={role.enabled} disabled={actions.pending || !canWrite} onCheckedChange={(checked) => actions.setRoleEnabled(role.id, checked)} />
             </div>
             <div className="mt-3 grid gap-2 text-xs">
               <InfoRow label="用户数" value={`${role.users}`} />
@@ -577,7 +599,7 @@ function RolesPage({ roles, loading, error, actions }: { roles: SystemRole[]; lo
   );
 }
 
-function PermissionsPage({ permissions, loading, error, actions }: { permissions: SystemPermission[]; loading: boolean; error: unknown; actions: SystemManagementActions }) {
+function PermissionsPage({ permissions, loading, error, actions, canWrite }: { permissions: SystemPermission[]; loading: boolean; error: unknown; actions: SystemManagementActions; canWrite: boolean }) {
   return (
     <SystemPageShell
       title="权限管理"
@@ -585,7 +607,7 @@ function PermissionsPage({ permissions, loading, error, actions }: { permissions
       error={error}
       actionError={actions.error}
       actions={
-        <Button onClick={actions.createPermission} disabled={actions.pending}>
+        <Button onClick={actions.createPermission} disabled={actions.pending || !canWrite} title={!canWrite ? missingPermissionText("system:permission:write") : undefined}>
           <KeyRound className="mr-1.5 h-4 w-4" />
           新增权限
         </Button>
@@ -616,7 +638,8 @@ function PermissionsPage({ permissions, loading, error, actions }: { permissions
                 <Button
                   variant="secondary"
                   size="sm"
-                  disabled={actions.pending}
+                  disabled={actions.pending || !canWrite}
+                  title={!canWrite ? missingPermissionText("system:permission:write") : undefined}
                   onClick={() => actions.setPermissionEnabled(permission.id, !permission.enabled)}
                 >
                   {permission.enabled ? "停用" : "启用"}
@@ -631,7 +654,7 @@ function PermissionsPage({ permissions, loading, error, actions }: { permissions
   );
 }
 
-function DictionariesPage({ dictionaries, loading, error, actions }: { dictionaries: SystemDictionary[]; loading: boolean; error: unknown; actions: SystemManagementActions }) {
+function DictionariesPage({ dictionaries, loading, error, actions, canWrite }: { dictionaries: SystemDictionary[]; loading: boolean; error: unknown; actions: SystemManagementActions; canWrite: boolean }) {
   const groups = useMemo(() => Array.from(new Set(dictionaries.map((item) => item.group))), [dictionaries]);
   const [activeGroup, setActiveGroup] = useState("");
   const selectedGroup = groups.includes(activeGroup) ? activeGroup : groups[0] ?? "";
@@ -644,7 +667,7 @@ function DictionariesPage({ dictionaries, loading, error, actions }: { dictionar
       error={error}
       actionError={actions.error}
       actions={
-        <Button onClick={() => actions.createDictionary(selectedGroup, dictionaries.length + 1)} disabled={actions.pending}>
+        <Button onClick={() => actions.createDictionary(selectedGroup, dictionaries.length + 1)} disabled={actions.pending || !canWrite} title={!canWrite ? missingPermissionText("system:dictionary:write") : undefined}>
           <BookOpen className="mr-1.5 h-4 w-4" />
           新增字典
         </Button>
@@ -688,7 +711,7 @@ function DictionariesPage({ dictionaries, loading, error, actions }: { dictionar
                   <Badge tone={item.enabled ? "success" : "warning"}>{item.enabled ? "启用" : "停用"}</Badge>
                 </Td>
                 <Td>
-                  <Button variant="secondary" size="sm" disabled={actions.pending} onClick={() => actions.setDictionaryEnabled(item.id, !item.enabled)}>
+                  <Button variant="secondary" size="sm" disabled={actions.pending || !canWrite} title={!canWrite ? missingPermissionText("system:dictionary:write") : undefined} onClick={() => actions.setDictionaryEnabled(item.id, !item.enabled)}>
                     {item.enabled ? "停用" : "启用"}
                   </Button>
                 </Td>
@@ -702,7 +725,7 @@ function DictionariesPage({ dictionaries, loading, error, actions }: { dictionar
   );
 }
 
-function MenusPage({ menus, loading, error, actions }: { menus: SystemMenu[]; loading: boolean; error: unknown; actions: SystemManagementActions }) {
+function MenusPage({ menus, loading, error, actions, canWrite }: { menus: SystemMenu[]; loading: boolean; error: unknown; actions: SystemManagementActions; canWrite: boolean }) {
   const nextSort = (menus.at(-1)?.sort ?? 0) + 10;
   return (
     <SystemPageShell
@@ -711,7 +734,7 @@ function MenusPage({ menus, loading, error, actions }: { menus: SystemMenu[]; lo
       error={error}
       actionError={actions.error}
       actions={
-        <Button onClick={() => actions.createMenu(nextSort)} disabled={actions.pending}>
+        <Button onClick={() => actions.createMenu(nextSort)} disabled={actions.pending || !canWrite} title={!canWrite ? missingPermissionText("system:menu:write") : undefined}>
           <ListTree className="mr-1.5 h-4 w-4" />
           新增菜单
         </Button>
@@ -738,10 +761,10 @@ function MenusPage({ menus, loading, error, actions }: { menus: SystemMenu[]; lo
               <Td>{menu.parent}</Td>
               <Td>{menu.sort}</Td>
               <Td>
-                <Switch checked={menu.visible} disabled={actions.pending} onCheckedChange={(checked) => actions.setMenuVisible(menu.id, checked)} />
+                <Switch checked={menu.visible} disabled={actions.pending || !canWrite} onCheckedChange={(checked) => actions.setMenuVisible(menu.id, checked)} />
               </Td>
               <Td>
-                <Button variant="secondary" size="sm" disabled={actions.pending} onClick={() => actions.setMenuVisible(menu.id, !menu.visible)}>
+                <Button variant="secondary" size="sm" disabled={actions.pending || !canWrite} title={!canWrite ? missingPermissionText("system:menu:write") : undefined} onClick={() => actions.setMenuVisible(menu.id, !menu.visible)}>
                   {menu.visible ? "隐藏" : "显示"}
                 </Button>
               </Td>

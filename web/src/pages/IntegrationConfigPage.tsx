@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import { useMemo, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { CheckCircle2, Copy, GitBranch, Hammer, KeyRound, RefreshCw, Save, Wand2, Webhook } from "lucide-react";
+import { getAdminIdentity } from "@/api/client";
 import {
   createBuildCenterProject,
   getBuildCenterOverview,
@@ -22,6 +23,7 @@ import { Card } from "@/components/ui/Card";
 import { Input } from "@/components/ui/Input";
 import { Switch } from "@/components/ui/Switch";
 import { formatDateTime } from "@/lib/format";
+import { hasPermission, missingPermissionText } from "@/lib/permissions";
 
 const providerOptions = ["github", "gitea", "gitlab", "generic"];
 const lifecycleOptions = ["active", "paused", "archived"];
@@ -115,6 +117,10 @@ export function IntegrationConfigPage() {
   const [routeEnabled, setRouteEnabled] = useState(false);
   const [message, setMessage] = useState("集成配置已就绪。");
   const [messageTone, setMessageTone] = useState<"default" | "success" | "warning" | "danger">("default");
+  const role = getAdminIdentity().role;
+  const canBuildWrite = hasPermission(role, "build:write");
+  const canIntegrationWrite = hasPermission(role, "integration:write");
+  const canQuickSetup = canBuildWrite && canIntegrationWrite;
 
   const overviewQuery = useQuery({
     queryKey: ["integration-config-overview"],
@@ -458,7 +464,8 @@ export function IntegrationConfigPage() {
               </div>
               <Button
                 onClick={() => quickSetupMutation.mutate()}
-                disabled={busy || !derivedPreview.ready}
+                disabled={busy || !derivedPreview.ready || !canQuickSetup}
+                title={!canQuickSetup ? missingPermissionText(canBuildWrite ? "integration:write" : "build:write") : undefined}
                 className="min-w-32"
               >
                 <Save className="mr-2 h-4 w-4" />
@@ -575,7 +582,7 @@ export function IntegrationConfigPage() {
                 <Select label="状态" value={lifecycleStatus} onChange={setLifecycleStatus} options={lifecycleOptions} />
               </div>
               <Select label="默认渠道" value={defaultChannel} onChange={setDefaultChannel} options={channelOptions} />
-              <Button onClick={() => createProjectMutation.mutate()} disabled={busy || !projectKey.trim() || !projectName.trim()}>
+              <Button onClick={() => createProjectMutation.mutate()} disabled={busy || !projectKey.trim() || !projectName.trim() || !canBuildWrite} title={!canBuildWrite ? missingPermissionText("build:write") : undefined}>
                 <Save className="mr-2 h-4 w-4" />
                 保存项目
               </Button>
@@ -596,7 +603,7 @@ export function IntegrationConfigPage() {
                 <SwitchRow label="Push" checked={triggerOnPush} onChange={setTriggerOnPush} />
                 <SwitchRow label="Tag" checked={triggerOnTag} onChange={setTriggerOnTag} />
               </div>
-              <Button onClick={() => repositoryMutation.mutate()} disabled={busy || !projectKey.trim() || !repoURL.trim()}>
+              <Button onClick={() => repositoryMutation.mutate()} disabled={busy || !projectKey.trim() || !repoURL.trim() || !canIntegrationWrite} title={!canIntegrationWrite ? missingPermissionText("integration:write") : undefined}>
                 <Save className="mr-2 h-4 w-4" />
                 保存仓库
               </Button>
@@ -653,7 +660,7 @@ export function IntegrationConfigPage() {
               <TextArea value={commandsText} onChange={setCommandsText} placeholder="commands json" />
               <TextArea value={artifactRulesText} onChange={setArtifactRulesText} placeholder="artifact rules json" />
               <SwitchRow label="启用 Profile" checked={profileEnabled} onChange={setProfileEnabled} />
-              <Button onClick={() => profileMutation.mutate()} disabled={busy || !profileKey.trim() || !buildCenterProject.trim()}>
+              <Button onClick={() => profileMutation.mutate()} disabled={busy || !profileKey.trim() || !buildCenterProject.trim() || !canBuildWrite} title={!canBuildWrite ? missingPermissionText("build:write") : undefined}>
                 <Save className="mr-2 h-4 w-4" />
                 保存 Profile
               </Button>
@@ -693,7 +700,7 @@ export function IntegrationConfigPage() {
               </div>
               <Input placeholder="ref pattern" value={routeRefPattern} onChange={(event) => setRouteRefPattern(event.target.value)} />
               <SwitchRow label="启用 Route" checked={routeEnabled} onChange={setRouteEnabled} />
-              <Button onClick={() => routeMutation.mutate()} disabled={busy || !effectiveRepositoryId}>
+              <Button onClick={() => routeMutation.mutate()} disabled={busy || !effectiveRepositoryId || !canIntegrationWrite} title={!canIntegrationWrite ? missingPermissionText("integration:write") : undefined}>
                 <Save className="mr-2 h-4 w-4" />
                 保存 Route
               </Button>

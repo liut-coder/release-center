@@ -1,6 +1,7 @@
 import { useMemo, useState, type ReactNode } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { CheckCircle2, Cloud, GitBranch, Hammer, Loader2, Package, Play, RefreshCw, Server, XCircle } from "lucide-react";
+import { getAdminIdentity } from "@/api/client";
 import {
   createBuildCenterRun,
   getBuildCenterRun,
@@ -21,6 +22,7 @@ import { Card } from "@/components/ui/Card";
 import { Table, Td, Th } from "@/components/ui/Table";
 import { cn } from "@/lib/cn";
 import { formatDateTime } from "@/lib/format";
+import { hasPermission, missingPermissionText } from "@/lib/permissions";
 
 const actionOptions = ["all", "status", "fetch", "prepare", "build", "image", "upload", "verify"] as const;
 const runningStatuses = new Set(["queued", "running"]);
@@ -35,6 +37,7 @@ export function BuildCenterPage() {
   const [message, setMessage] = useState("");
   const [messageTone, setMessageTone] = useState<"default" | "success" | "warning" | "danger">("default");
   const [selectedRunId, setSelectedRunId] = useState("");
+  const canBuildWrite = hasPermission(getAdminIdentity().role, "build:write");
 
   const overviewQuery = useQuery({
     queryKey: ["build-center-overview"],
@@ -176,7 +179,8 @@ export function BuildCenterPage() {
                   <Td className="text-right">
                     <Button
                       size="sm"
-                      disabled={!row.profile || row.profile.enabled === false || runMutation.isPending}
+                      disabled={!row.profile || row.profile.enabled === false || runMutation.isPending || !canBuildWrite}
+                      title={!canBuildWrite ? missingPermissionText("build:write") : undefined}
                       onClick={() => row.profile && runMutation.mutate({ project: row.project, profile: row.profile })}
                     >
                       <Play className="mr-1.5 h-3.5 w-3.5" />
