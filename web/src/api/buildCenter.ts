@@ -83,6 +83,48 @@ export interface WebhookRoute {
   updated_at?: string;
 }
 
+export interface WebhookRouteDryRunPayload {
+  provider: string;
+  repository: string;
+  event_type: string;
+  ref: string;
+  commit_sha?: string;
+  sender?: string;
+}
+
+export interface WebhookRouteDryRunMatch {
+  route: {
+    id: string;
+    project_key: string;
+    repository: string;
+    profile_key: string;
+    event_type: string;
+    ref_pattern: string;
+    action: BuildRunAction;
+    trigger_on_push: boolean;
+    trigger_on_tag: boolean;
+  };
+  event_ok: boolean;
+  ref_ok: boolean;
+  matched: boolean;
+  build_ref?: string;
+  block_reason?: string;
+}
+
+export interface WebhookRouteDryRunResponse {
+  ok: boolean;
+  event: {
+    provider: string;
+    event_type: string;
+    repository: string;
+    ref: string;
+    commit_sha?: string;
+    sender?: string;
+  };
+  matches: WebhookRouteDryRunMatch[];
+  message_zh?: string;
+}
+
 export interface BuildCenterRun {
   id: string;
   project_id: string;
@@ -285,4 +327,11 @@ export function upsertWebhookRoute(projectKey: string, payload: UpsertWebhookRou
       body: JSON.stringify(payload),
     },
   );
+}
+
+export function dryRunWebhookRoute(payload: WebhookRouteDryRunPayload) {
+  return apiRequest<WebhookRouteDryRunResponse>("/admin/api/build-center/webhook-routes/dry-run", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
 }

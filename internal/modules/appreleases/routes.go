@@ -39,6 +39,7 @@ func (h *Handler) RoutesWithOptions(opts RouteOptions) chi.Router {
 		r.With(RequirePermission("integration:write")).Post("/admin/api/build-center/projects/{project_key}/repositories", h.UpsertCodeRepository)
 		r.With(RequirePermission("build:write")).Post("/admin/api/build-center/projects/{project_key}/profiles", h.UpsertBuildProfile)
 		r.With(RequirePermission("integration:write")).Post("/admin/api/build-center/projects/{project_key}/webhook-routes", h.UpsertWebhookRoute)
+		r.With(RequirePermission("integration:write")).Post("/admin/api/build-center/webhook-routes/dry-run", h.DryRunWebhookRoute)
 		r.With(RequirePermission("build:write")).Post("/admin/api/build-center/projects/{project_key}/runs", h.CreateBuildCenterRun)
 		r.Get("/admin/api/build-center/runs/{run_id}", h.BuildCenterRun)
 		r.Get("/admin/api/build-center/runs/{run_id}/logs", h.BuildCenterRunLogs)

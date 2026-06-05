@@ -74,6 +74,31 @@ type WebhookRouteRequest struct {
 	Metadata     map[string]any `json:"metadata"`
 }
 
+type WebhookRouteDryRunRequest struct {
+	Provider   string `json:"provider"`
+	Repository string `json:"repository"`
+	EventType  string `json:"event_type"`
+	Ref        string `json:"ref"`
+	CommitSHA  string `json:"commit_sha"`
+	Sender     string `json:"sender"`
+}
+
+type WebhookRouteDryRunMatch struct {
+	Route       WebhookBuildRoute `json:"route"`
+	EventOK     bool              `json:"event_ok"`
+	RefOK       bool              `json:"ref_ok"`
+	Matched     bool              `json:"matched"`
+	BuildRef    string            `json:"build_ref,omitempty"`
+	BlockReason string            `json:"block_reason,omitempty"`
+}
+
+type WebhookRouteDryRunResponse struct {
+	OK        bool                      `json:"ok"`
+	Event     WebhookEventRequest       `json:"event"`
+	Matches   []WebhookRouteDryRunMatch `json:"matches"`
+	MessageZh string                    `json:"message_zh,omitempty"`
+}
+
 type BuildCenterRunResponse struct {
 	Run BuildCenterRunAdmin `json:"run"`
 }

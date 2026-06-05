@@ -5,6 +5,7 @@ import { CheckCircle2, Copy, ExternalLink, GitBranch, Hammer, KeyRound, RefreshC
 import { getAdminIdentity } from "@/api/client";
 import {
   createBuildCenterProject,
+  dryRunWebhookRoute,
   getBuildCenterOverview,
   upsertBuildProfile,
   upsertCodeRepository,
@@ -12,6 +13,7 @@ import {
   type BuildCenterProject,
   type BuildProfile,
   type CodeRepository,
+  type WebhookRouteDryRunResponse,
   type WebhookRoute,
 } from "@/api/buildCenter";
 import { getIntegrationCredentials, type IntegrationCredentialStatus } from "@/api/integrationCredentials";
@@ -115,6 +117,9 @@ export function IntegrationConfigPage() {
   const [routeRefPattern, setRouteRefPattern] = useState("refs/heads/main");
   const [routeAction, setRouteAction] = useState("all");
   const [routeEnabled, setRouteEnabled] = useState(false);
+  const [dryRunEventType, setDryRunEventType] = useState("push");
+  const [dryRunRef, setDryRunRef] = useState("main");
+  const [dryRunResult, setDryRunResult] = useState<WebhookRouteDryRunResponse>();
   const [message, setMessage] = useState("集成配置已就绪。");
   const [messageTone, setMessageTone] = useState<"default" | "success" | "warning" | "danger">("default");
   const role = getAdminIdentity().role;
@@ -353,9 +358,25 @@ export function IntegrationConfigPage() {
     },
     onError: (error) => showConfigError(error, "快速接入失败", setMessage, setMessageTone),
   });
+  const dryRunMutation = useMutation({
+    mutationFn: () =>
+      dryRunWebhookRoute({
+        provider: repoProvider,
+        repository: repoFullName || selectedRepository?.repo_full_name || repoURL,
+        event_type: dryRunEventType,
+        ref: dryRunRef,
+        sender: "admin-web",
+      }),
+    onSuccess: (result) => {
+      setDryRunResult(result);
+      setMessage(result.message_zh || "Webhook Route 试跑完成");
+      setMessageTone(result.matches.some((match) => match.matched) ? "success" : "warning");
+    },
+    onError: (error) => showConfigError(error, "Webhook Route 试跑失败", setMessage, setMessageTone),
+  });
 
-  const busy = createProjectMutation.isPending || repositoryMutation.isPending || profileMutation.isPending || routeMutation.isPending || quickSetupMutation.isPending;
-  const mutationError = createProjectMutation.error || repositoryMutation.error || profileMutation.error || routeMutation.error || quickSetupMutation.error;
+  const busy = createProjectMutation.isPending || repositoryMutation.isPending || profileMutation.isPending || routeMutation.isPending || quickSetupMutation.isPending || dryRunMutation.isPending;
+  const mutationError = createProjectMutation.error || repositoryMutation.error || profileMutation.error || routeMutation.error || quickSetupMutation.error || dryRunMutation.error;
 
   const applyTemplate = (templateKey: string) => {
     const template = setupTemplates.find((item) => item.key === templateKey) ?? setupTemplates[0];
@@ -615,9 +636,19 @@ export function IntegrationConfigPage() {
           setRouteEnabled(true);
           setRouteEventType("push");
           setRouteRefPattern(refPatternFromBranch(repoDefaultRef, "push"));
+          setDryRunEventType("push");
+          setDryRunRef(repoDefaultRef || "main");
           setMessage("已切换为推荐的 push webhook 接入配置，保存仓库和 Route 后生效。");
           setMessageTone("success");
         }}
+        dryRunEventType={dryRunEventType}
+        dryRunRef={dryRunRef}
+        dryRunResult={dryRunResult}
+        dryRunPending={dryRunMutation.isPending}
+        canDryRun={canIntegrationWrite}
+        onDryRunEventTypeChange={setDryRunEventType}
+        onDryRunRefChange={setDryRunRef}
+        onDryRun={() => dryRunMutation.mutate()}
       />
 
       <div className="my-4 grid gap-3 md:grid-cols-4">
@@ -962,9 +993,17 @@ function IntegrationClosurePanel({
   refPattern,
   routeEnabled,
   settingsURL,
+  dryRunEventType,
+  dryRunRef,
+  dryRunResult,
+  dryRunPending,
+  canDryRun,
   onCopyPayload,
   onCopySecret,
   onEnableRecommended,
+  onDryRunEventTypeChange,
+  onDryRunRefChange,
+  onDryRun,
 }: {
   items: Array<{ label: string; ok: boolean; note: string }>;
   payloadURL: string;
@@ -973,9 +1012,17 @@ function IntegrationClosurePanel({
   refPattern: string;
   routeEnabled: boolean;
   settingsURL: string;
+  dryRunEventType: string;
+  dryRunRef: string;
+  dryRunResult?: WebhookRouteDryRunResponse;
+  dryRunPending: boolean;
+  canDryRun: boolean;
   onCopyPayload: () => void;
   onCopySecret: () => void;
   onEnableRecommended: () => void;
+  onDryRunEventTypeChange: (value: string) => void;
+  onDryRunRefChange: (value: string) => void;
+  onDryRun: () => void;
 }) {
   const readyCount = items.filter((item) => item.ok).length;
   const allReady = readyCount === items.length;
@@ -1013,6 +1060,22 @@ function IntegrationClosurePanel({
               </Button>
             ) : null}
           </div>
+          <div className="rounded-lg border bg-muted p-3">
+            <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <div className="text-xs font-medium">Route 试跑</div>
+                <div className="mt-1 text-[11px] text-muted-foreground">不创建构建任务，只验证当前事件和 ref 是否会命中已启用 route。</div>
+              </div>
+              <Button type="button" size="sm" onClick={onDryRun} disabled={dryRunPending || !canDryRun} title={!canDryRun ? missingPermissionText("integration:write") : undefined}>
+                {dryRunPending ? "试跑中" : "试跑 Route"}
+              </Button>
+            </div>
+            <div className="grid gap-2 md:grid-cols-[140px_minmax(0,1fr)]">
+              <Select label="试跑事件" value={dryRunEventType} onChange={onDryRunEventTypeChange} options={eventOptions} />
+              <Input placeholder="main / refs/heads/main / v1.0.0" value={dryRunRef} onChange={(event) => onDryRunRefChange(event.target.value)} />
+            </div>
+            {dryRunResult ? <DryRunResult result={dryRunResult} /> : null}
+          </div>
         </div>
         <div className="grid gap-2">
           {items.map((item) => (
@@ -1027,6 +1090,33 @@ function IntegrationClosurePanel({
         </div>
       </div>
     </Card>
+  );
+}
+
+function DryRunResult({ result }: { result: WebhookRouteDryRunResponse }) {
+  return (
+    <div className="mt-3 grid gap-2">
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border bg-white p-2 text-xs">
+        <span className="font-medium">{result.message_zh || "试跑完成"}</span>
+        <span className="font-mono text-muted-foreground">{result.event.event_type} / {result.event.ref}</span>
+      </div>
+      {result.matches.map((match) => (
+        <div key={match.route.id} className="rounded-md border bg-white p-2 text-xs">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="font-medium">{match.route.project_key} / {match.route.profile_key}</div>
+            <Badge tone={match.matched ? "success" : "warning"}>{match.matched ? "命中" : "未命中"}</Badge>
+          </div>
+          <div className="mt-2 grid gap-1">
+            <Info label="Route" value={`${match.route.event_type} / ${match.route.ref_pattern} / ${match.route.action}`} />
+            <Info label="事件检查" value={match.event_ok ? "通过" : "未通过"} />
+            <Info label="分支检查" value={match.ref_ok ? "通过" : "未通过"} />
+            <Info label="Build ref" value={match.build_ref || "-"} />
+            {match.block_reason ? <Info label="原因" value={match.block_reason} /> : null}
+          </div>
+        </div>
+      ))}
+      {!result.matches.length ? <EmptyBox text="没有找到已启用的仓库 Webhook route。请先保存仓库、启用 Webhook，并保存启用状态的 Route。" /> : null}
+    </div>
   );
 }
 

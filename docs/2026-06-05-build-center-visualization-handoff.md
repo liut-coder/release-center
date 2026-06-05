@@ -147,6 +147,7 @@ cp -a web/dist/. "$WEB_DIST"/
 - 集成配置页面已能维护项目、Git 仓库、构建 profile、Webhook route 和 credential/secret 引用。
 - 集成配置页面已新增快速接入向导：支持 GitHub Web / Go Server / Android 模板、粘贴仓库 URL 自动解析 provider/full name/project key、自动生成 profile/route/credential ref、预检必填项、复制 webhook endpoint、一键保存项目 + 仓库 + profile + route。已有项目、仓库、profile 和 route 可一键载入编辑，减少重复手填。
 - 集成配置页面已新增外部接入闭环面板：展示项目、仓库、profile、credential ref、webhook secret ref、仓库 webhook、route 是否就绪；提供完整 Payload URL、Secret 引用、触发事件、ref pattern、route 状态、复制按钮、GitHub Webhooks 设置入口和“push 推荐配置”快捷填充。
+- 集成配置页面已新增 Webhook Route 试跑：输入事件和 ref 后调用 Admin dry-run API，复用后端 route 匹配逻辑，只返回命中/未命中、build ref 和阻塞原因，不创建真实构建任务。
 - release-center 的 main push 和 tag route 已有 migration 预置，但默认 disabled；配置 secret 和认证后再启用。
 
 ### RBAC / 权限

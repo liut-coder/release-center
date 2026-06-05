@@ -90,6 +90,72 @@ func TestBuildRefFromWebhookRef(t *testing.T) {
 	}
 }
 
+func TestDryRunWebhookRouteReportsMatchedRoute(t *testing.T) {
+	store := &buildCenterAuditStore{
+		webhookRoutes: []WebhookBuildRoute{
+			{
+				ID:            "route-1",
+				ProjectKey:    "release-center",
+				Repository:    "liut-coder/release-center",
+				ProfileKey:    "web",
+				EventType:     "push",
+				RefPattern:    "refs/heads/main",
+				Action:        "all",
+				TriggerOnPush: true,
+			},
+		},
+	}
+	service := NewServiceWithStore(Config{}, store)
+
+	resp, err := service.DryRunWebhookRoute(context.Background(), WebhookRouteDryRunRequest{
+		Provider:   "github",
+		Repository: "liut-coder/release-center",
+		EventType:  "push",
+		Ref:        "main",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(resp.Matches) != 1 || !resp.Matches[0].Matched {
+		t.Fatalf("expected one matched route, got %#v", resp.Matches)
+	}
+	if resp.Matches[0].BuildRef != "main" {
+		t.Fatalf("expected build ref main, got %q", resp.Matches[0].BuildRef)
+	}
+}
+
+func TestDryRunWebhookRouteReportsBlockedRoute(t *testing.T) {
+	store := &buildCenterAuditStore{
+		webhookRoutes: []WebhookBuildRoute{
+			{
+				ID:            "route-1",
+				ProjectKey:    "release-center",
+				Repository:    "liut-coder/release-center",
+				ProfileKey:    "web",
+				EventType:     "push",
+				RefPattern:    "refs/heads/main",
+				Action:        "all",
+				TriggerOnPush: false,
+				TriggerOnTag:  false,
+			},
+		},
+	}
+	service := NewServiceWithStore(Config{}, store)
+
+	resp, err := service.DryRunWebhookRoute(context.Background(), WebhookRouteDryRunRequest{
+		Provider:   "github",
+		Repository: "liut-coder/release-center",
+		EventType:  "push",
+		Ref:        "main",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(resp.Matches) != 1 || resp.Matches[0].Matched || resp.Matches[0].BlockReason == "" {
+		t.Fatalf("expected blocked route with reason, got %#v", resp.Matches)
+	}
+}
+
 func TestBuildCenterConfigActionsInsertAudit(t *testing.T) {
 	enabled := true
 	store := &buildCenterAuditStore{}
@@ -211,8 +277,9 @@ exit 0
 
 type buildCenterAuditStore struct {
 	Store
-	audits    []capturedAudit
-	completed chan BuildCenterRunPatch
+	audits        []capturedAudit
+	completed     chan BuildCenterRunPatch
+	webhookRoutes []WebhookBuildRoute
 }
 
 func (s *buildCenterAuditStore) InsertAudit(_ context.Context, action, targetType, targetID, message string, metadata map[string]any) error {
@@ -295,6 +362,13 @@ func (s *buildCenterAuditStore) UpsertWebhookRoute(_ context.Context, projectKey
 		Action:         req.Action,
 		Enabled:        boolValue(req.Enabled, true),
 	}, nil
+}
+
+func (s *buildCenterAuditStore) MatchWebhookBuildRoutes(_ context.Context, event WebhookEventRequest) ([]WebhookBuildRoute, error) {
+	if event.Repository == "" {
+		return []WebhookBuildRoute{}, nil
+	}
+	return append([]WebhookBuildRoute{}, s.webhookRoutes...), nil
 }
 
 func (s *buildCenterAuditStore) CreateBuildCenterRun(_ context.Context, projectKey string, req BuildCenterRunRequest) (BuildCenterRunAdmin, BuildProfileAdmin, error) {

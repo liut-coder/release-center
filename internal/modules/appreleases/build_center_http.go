@@ -114,6 +114,20 @@ func (h *Handler) UpsertWebhookRoute(w http.ResponseWriter, r *http.Request) {
 	httpx.JSON(w, http.StatusOK, resp)
 }
 
+func (h *Handler) DryRunWebhookRoute(w http.ResponseWriter, r *http.Request) {
+	var req WebhookRouteDryRunRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		httpx.Error(w, r, http.StatusBadRequest, "request.invalid_json", "请求 JSON 格式不正确", nil)
+		return
+	}
+	resp, err := h.service.DryRunWebhookRoute(r.Context(), req)
+	if err != nil {
+		buildCenterConfigAPIError(w, r, err, "build_center.webhook_dry_run_failed", "Webhook Route 试跑失败")
+		return
+	}
+	httpx.JSON(w, http.StatusOK, resp)
+}
+
 func (h *Handler) CreateBuildCenterRun(w http.ResponseWriter, r *http.Request) {
 	var req BuildCenterRunRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {

@@ -283,6 +283,70 @@ func (s *Service) UpsertWebhookRoute(ctx context.Context, projectKey string, req
 	return WebhookRouteActionResponse{OK: true, WebhookRoute: route, MessageZh: "Webhook 路由已保存"}, nil
 }
 
+func (s *Service) DryRunWebhookRoute(ctx context.Context, req WebhookRouteDryRunRequest) (WebhookRouteDryRunResponse, error) {
+	routeStore, ok := s.store.(BuildCenterWebhookStore)
+	if !ok {
+		return WebhookRouteDryRunResponse{}, errBuildCenterStoreUnavailable
+	}
+	event := WebhookEventRequest{
+		Provider:   normalizeCodeProvider(req.Provider),
+		EventType:  firstNonBlank(strings.TrimSpace(req.EventType), "push"),
+		Repository: strings.TrimSpace(req.Repository),
+		Ref:        normalizeWebhookDryRunRef(req.Ref, req.EventType),
+		CommitSHA:  strings.TrimSpace(req.CommitSHA),
+		Sender:     firstNonBlank(req.Sender, "admin-web"),
+	}
+	if event.Provider == "" || event.Repository == "" || event.Ref == "" {
+		return WebhookRouteDryRunResponse{}, fmt.Errorf("provider, repository and ref are required")
+	}
+	routes, err := routeStore.MatchWebhookBuildRoutes(ctx, event)
+	if err != nil {
+		return WebhookRouteDryRunResponse{}, err
+	}
+	matches := make([]WebhookRouteDryRunMatch, 0, len(routes))
+	matchedCount := 0
+	for _, route := range routes {
+		eventOK := webhookRouteAllowsEvent(route, event)
+		refOK := webhookRefMatches(route.RefPattern, event.Ref)
+		match := WebhookRouteDryRunMatch{
+			Route:   route,
+			EventOK: eventOK,
+			RefOK:   refOK,
+			Matched: eventOK && refOK,
+		}
+		if match.Matched {
+			match.BuildRef = buildRefFromWebhookRef(event.Ref)
+			matchedCount++
+		} else if !eventOK {
+			match.BlockReason = "事件类型或仓库 push/tag 开关未命中"
+		} else if !refOK {
+			match.BlockReason = "ref_pattern 未命中当前 ref"
+		}
+		matches = append(matches, match)
+	}
+	message := "Webhook route 试跑未命中"
+	if matchedCount > 0 {
+		message = fmt.Sprintf("Webhook route 试跑命中 %d 条", matchedCount)
+	} else if len(routes) == 0 {
+		message = "没有找到已启用的仓库 Webhook route"
+	}
+	return WebhookRouteDryRunResponse{OK: true, Event: event, Matches: matches, MessageZh: message}, nil
+}
+
+func normalizeWebhookDryRunRef(ref, eventType string) string {
+	ref = strings.TrimSpace(ref)
+	if ref == "" {
+		return ""
+	}
+	if strings.HasPrefix(ref, "refs/") {
+		return ref
+	}
+	if strings.TrimSpace(eventType) == "tag" || strings.HasPrefix(ref, "v") {
+		return "refs/tags/" + strings.TrimPrefix(ref, "refs/tags/")
+	}
+	return "refs/heads/" + strings.TrimPrefix(ref, "refs/heads/")
+}
+
 func (s *Service) CreateBuildCenterRun(ctx context.Context, projectKey string, req BuildCenterRunRequest) (BuildCenterRunResponse, error) {
 	store, ok := s.store.(BuildCenterExecutionStore)
 	if !ok {
