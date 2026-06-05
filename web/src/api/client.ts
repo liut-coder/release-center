@@ -14,6 +14,8 @@ export async function apiRequest<T>(path: string, init: ApiRequestInit = {}): Pr
   const timeout = window.setTimeout(() => controller.abort(), DEFAULT_TIMEOUT_MS);
   const requestId = crypto.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(16).slice(2)}`;
   const token = localStorage.getItem("release-center-admin-token") ?? "";
+  const account = localStorage.getItem("release-center-admin-account") ?? "";
+  const role = localStorage.getItem("release-center-admin-role") ?? "";
 
   try {
     const response = await fetch(`${apiBaseUrl()}${path}`, {
@@ -24,6 +26,8 @@ export async function apiRequest<T>(path: string, init: ApiRequestInit = {}): Pr
           Accept: "application/json",
           "X-Request-Id": requestId,
           ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          ...(account ? { "X-Admin-Account": account } : {}),
+          ...(role ? { "X-Admin-Role": role } : {}),
         },
         requestInit,
       ),
@@ -61,10 +65,22 @@ export function saveAppTokens(tokens: { configToken?: string; runtimeControlToke
   if (tokens.runtimeControlToken !== undefined) localStorage.setItem("release-center-admin-token", tokens.runtimeControlToken.trim());
 }
 
+export function saveAdminIdentity(identity: { account?: string; role?: string }) {
+  if (identity.account !== undefined) localStorage.setItem("release-center-admin-account", identity.account.trim());
+  if (identity.role !== undefined) localStorage.setItem("release-center-admin-role", identity.role.trim());
+}
+
 export function getAppTokens() {
   return {
     configToken: localStorage.getItem("release-center-admin-token") ?? "",
     runtimeControlToken: localStorage.getItem("release-center-admin-token") ?? "",
+  };
+}
+
+export function getAdminIdentity() {
+  return {
+    account: localStorage.getItem("release-center-admin-account") ?? "release.admin",
+    role: localStorage.getItem("release-center-admin-role") ?? "system_admin",
   };
 }
 

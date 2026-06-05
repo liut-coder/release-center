@@ -54,6 +54,85 @@ func TestBearerTokenMiddlewareAllowsValidToken(t *testing.T) {
 	}
 }
 
+func TestRequirePermissionRejectsViewerWriteAction(t *testing.T) {
+	handler := NewHandler(NewService(Config{}))
+	routes := handler.RoutesWithOptions(RouteOptions{
+		AdminMiddleware: []func(http.Handler) http.Handler{
+			BearerTokenMiddleware("secret"),
+			AdminIdentityMiddleware("release_viewer"),
+		},
+	})
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/admin/api/release-plans", strings.NewReader(`{}`))
+	req.Header.Set("Authorization", "Bearer secret")
+	routes.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected viewer write action to be forbidden, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "release:write") {
+		t.Fatalf("expected forbidden response to include required permission, body=%s", rec.Body.String())
+	}
+}
+
+func TestRequirePermissionAllowsReleaseAdminWriteAction(t *testing.T) {
+	handler := NewHandler(NewService(Config{}))
+	routes := handler.RoutesWithOptions(RouteOptions{
+		AdminMiddleware: []func(http.Handler) http.Handler{
+			BearerTokenMiddleware("secret"),
+			AdminIdentityMiddleware("release_admin"),
+		},
+	})
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/admin/api/release-plans", strings.NewReader(`{}`))
+	req.Header.Set("Authorization", "Bearer secret")
+	routes.ServeHTTP(rec, req)
+
+	if rec.Code == http.StatusForbidden {
+		t.Fatalf("expected release admin to pass RBAC and reach business handler, body=%s", rec.Body.String())
+	}
+}
+
+func TestRequirePermissionRejectsReleaseAdminSystemWrite(t *testing.T) {
+	handler := NewHandler(NewService(Config{}))
+	routes := handler.RoutesWithOptions(RouteOptions{
+		AdminMiddleware: []func(http.Handler) http.Handler{
+			BearerTokenMiddleware("secret"),
+			AdminIdentityMiddleware("release_admin"),
+		},
+	})
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/admin/api/system/users", strings.NewReader(`{}`))
+	req.Header.Set("Authorization", "Bearer secret")
+	routes.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected release admin system write to be forbidden, got %d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestRequirePermissionAllowsSystemAdminWildcard(t *testing.T) {
+	handler := NewHandler(NewService(Config{}))
+	routes := handler.RoutesWithOptions(RouteOptions{
+		AdminMiddleware: []func(http.Handler) http.Handler{
+			BearerTokenMiddleware("secret"),
+			AdminIdentityMiddleware("system_admin"),
+		},
+	})
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/admin/api/system/users", strings.NewReader(`{}`))
+	req.Header.Set("Authorization", "Bearer secret")
+	routes.ServeHTTP(rec, req)
+
+	if rec.Code == http.StatusForbidden {
+		t.Fatalf("expected system admin wildcard to pass RBAC and reach business handler, body=%s", rec.Body.String())
+	}
+}
+
 func TestRoutesExposeClientLifecycleEndpoints(t *testing.T) {
 	handler := NewHandler(NewService(Config{
 		LatestVersionCode:       20,
@@ -132,6 +211,7 @@ func TestRoutesWithOptionsProtectsAdminWorkerEndpoints(t *testing.T) {
 	routes := handler.RoutesWithOptions(RouteOptions{
 		AdminMiddleware: []func(http.Handler) http.Handler{
 			BearerTokenMiddleware("secret"),
+			AdminIdentityMiddleware("system_admin"),
 		},
 	})
 
@@ -149,6 +229,7 @@ func TestRoutesWithOptionsProtectsArtifactCenterEndpoints(t *testing.T) {
 	routes := handler.RoutesWithOptions(RouteOptions{
 		AdminMiddleware: []func(http.Handler) http.Handler{
 			BearerTokenMiddleware("secret"),
+			AdminIdentityMiddleware("system_admin"),
 		},
 	})
 
@@ -234,6 +315,7 @@ func TestReleasePlanActionAllowsEmptyBody(t *testing.T) {
 	routes := handler.RoutesWithOptions(RouteOptions{
 		AdminMiddleware: []func(http.Handler) http.Handler{
 			BearerTokenMiddleware("secret"),
+			AdminIdentityMiddleware("system_admin"),
 		},
 	})
 

@@ -148,6 +148,16 @@ cp -a web/dist/. "$WEB_DIST"/
 - 集成配置页面已新增快速接入向导：支持 GitHub Web / Go Server / Android 模板、粘贴仓库 URL 自动解析 provider/full name/project key、自动生成 profile/route/credential ref、预检必填项、复制 webhook endpoint、一键保存项目 + 仓库 + profile + route。已有项目、仓库、profile 和 route 可一键载入编辑，减少重复手填。
 - release-center 的 main push 和 tag route 已有 migration 预置，但默认 disabled；配置 secret 和认证后再启用。
 
+### RBAC / 权限
+
+- Admin 写接口已接入路由层 RBAC：构建、集成配置、发布计划、旧 APK/资源发布、部署、Worker 任务和系统管理写操作都会先校验权限。
+- 默认 `ADMIN_TOKEN` 请求注入 `system_admin`，也支持受信任上游或前端登录态通过 `X-Admin-Account` / `X-Admin-Role` 传入账号和角色。
+- 当前内置角色权限矩阵：
+  - `system_admin`：`system:*`、`release:*`、`build:*`、`deploy:*`、`worker:*`、`integration:*`。
+  - `release_admin`：发布、构建、部署、Worker 和集成配置写权限，但不能维护系统用户、角色、权限、菜单和字典。
+  - `release_viewer`：发布、构建、部署、Worker、集成配置只读和审计查看，写接口返回 403。
+- 前端登录页可选择系统管理员、发版管理员、只读观察员，用于验证权限矩阵；真实密钥仍只通过后台 token 认证，不在页面或文档中暴露。
+
 ## 4. 最新提交
 
 近期关键提交：
@@ -241,8 +251,7 @@ fatal: could not read Username for 'https://github.com': No such device or addre
 2. 做 GitHub webhook 真实仓库 smoke：启用 secret、repository、route，push/tag 后确认 `webhook_events` 和 `build_center_runs`。
 3. 做 Cloudflare worker 真部署 smoke：准备外部 worker 机器，执行 `releasectl worker-run -labels linux,node,cloudflare -execute`。
 4. 做 Android 迁移收敛：逐步弱化旧 Android 发布表单，把日常入口集中到统一发布计划工作台。
-5. 做权限/RBAC：构建、发布、部署动作按角色权限拦截，并补权限矩阵验收。
-6. 做真实回滚演练：生产目标上验证 release plan rollback、deployment rollback、审批和审计记录。
+5. 做真实回滚演练：生产目标上验证 release plan rollback、deployment rollback、审批和审计记录。
 
 ## 8. 安全注意
 

@@ -20,7 +20,7 @@ import {
   SlidersHorizontal,
   Users,
 } from "lucide-react";
-import { getAppTokens, saveAppTokens } from "@/api/client";
+import { getAdminIdentity, getAppTokens, saveAdminIdentity, saveAppTokens } from "@/api/client";
 import {
   createSystemDictionary,
   createSystemMenu,
@@ -131,10 +131,12 @@ type SystemPageRenderContext = {
 
 export function App() {
   const storedToken = getAppTokens().configToken;
+  const storedIdentity = getAdminIdentity();
   const [session, setSession] = useState(() => ({
     signedIn: import.meta.env.VITE_USE_MOCK === "true" || Boolean(storedToken),
     token: storedToken,
-    name: storedToken ? "Release Admin" : "演示管理员",
+    name: storedIdentity.account || (storedToken ? "release.admin" : "演示管理员"),
+    role: storedIdentity.role || "system_admin",
   }));
   const [activePage, setActivePage] = useState<AdminPageKey>("dashboard");
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -146,7 +148,7 @@ export function App() {
   const systemActions = useSystemManagementActions();
 
   if (!session.signedIn) {
-    return <LoginPage onLogin={(token, name) => setSession({ signedIn: true, token, name })} />;
+    return <LoginPage onLogin={(token, name, role) => setSession({ signedIn: true, token, name, role })} />;
   }
 
   const currentLabel = navigation.flatMap((group) => group.items).find((item) => item.key === activePage)?.label ?? "首页";
@@ -208,14 +210,14 @@ export function App() {
               <Badge tone="success">{session.token ? "已认证" : "演示"}</Badge>
               <div className="hidden text-right text-xs sm:block">
                 <div className="font-medium">{session.name}</div>
-                <div className="text-muted-foreground">系统管理员</div>
+                <div className="text-muted-foreground">{roleLabel(session.role)}</div>
               </div>
               <Button
                 variant="secondary"
                 size="icon"
                 onClick={() => {
                   saveAppTokens({ configToken: "" });
-                  setSession({ signedIn: false, token: "", name: "" });
+                  setSession({ signedIn: false, token: "", name: "", role: "system_admin" });
                 }}
               >
                 <LogOut className="h-4 w-4" />
@@ -317,8 +319,10 @@ function useSystemManagementActions(): SystemManagementActions {
   };
 }
 
-function LoginPage({ onLogin }: { onLogin: (token: string, name: string) => void }) {
-  const [account, setAccount] = useState("admin");
+function LoginPage({ onLogin }: { onLogin: (token: string, name: string, role: string) => void }) {
+  const storedIdentity = getAdminIdentity();
+  const [account, setAccount] = useState(storedIdentity.account || "release.admin");
+  const [role, setRole] = useState(storedIdentity.role || "system_admin");
   const [token, setToken] = useState(getAppTokens().configToken);
 
   return (
@@ -343,11 +347,24 @@ function LoginPage({ onLogin }: { onLogin: (token: string, name: string) => void
               <span className="font-medium">后台 Token</span>
               <Input value={token} type="password" onChange={(event) => setToken(event.target.value)} />
             </label>
+            <label className="grid gap-1.5 text-xs">
+              <span className="font-medium">角色</span>
+              <select
+                className="h-9 w-full rounded-lg border bg-white px-3 text-xs outline-none transition focus:border-black focus:ring-2 focus:ring-black/10"
+                value={role}
+                onChange={(event) => setRole(event.target.value)}
+              >
+                <option value="system_admin">系统管理员</option>
+                <option value="release_admin">发版管理员</option>
+                <option value="release_viewer">只读观察员</option>
+              </select>
+            </label>
             <Button
               className="mt-1 w-full"
               onClick={() => {
                 saveAppTokens({ configToken: token.trim() });
-                onLogin(token.trim(), account.trim() || "Admin");
+                saveAdminIdentity({ account: account.trim() || "release.admin", role });
+                onLogin(token.trim(), account.trim() || "release.admin", role);
               }}
             >
               登录
@@ -357,6 +374,13 @@ function LoginPage({ onLogin }: { onLogin: (token: string, name: string) => void
       </div>
     </main>
   );
+}
+
+function roleLabel(role: string) {
+  if (role === "system_admin") return "系统管理员";
+  if (role === "release_admin") return "发版管理员";
+  if (role === "release_viewer") return "只读观察员";
+  return role || "未知角色";
 }
 
 function NavButton({ active, icon: Icon, label, onClick }: { active: boolean; icon: typeof Home; label: string; onClick: () => void }) {

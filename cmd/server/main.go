@@ -145,7 +145,10 @@ func tokenMiddlewares(token string) []func(http.Handler) http.Handler {
 	if strings.TrimSpace(token) == "" {
 		return nil
 	}
-	return []func(http.Handler) http.Handler{appreleases.BearerTokenMiddleware(token)}
+	return []func(http.Handler) http.Handler{
+		appreleases.BearerTokenMiddleware(token),
+		appreleases.AdminIdentityMiddleware(env("ADMIN_DEFAULT_ROLE", "system_admin")),
+	}
 }
 
 func webhookMiddlewares() []func(http.Handler) http.Handler {
