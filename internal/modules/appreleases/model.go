@@ -597,9 +597,10 @@ type UploadedResourcePackage struct {
 }
 
 type AdminActionResponse struct {
-	OK        bool            `json:"ok"`
-	Release   AppReleaseAdmin `json:"release"`
-	MessageZh string          `json:"message_zh,omitempty"`
+	OK          bool              `json:"ok"`
+	Release     AppReleaseAdmin   `json:"release"`
+	ReleasePlan *ReleasePlanAdmin `json:"release_plan,omitempty"`
+	MessageZh   string            `json:"message_zh,omitempty"`
 }
 
 type BuildActionResponse struct {

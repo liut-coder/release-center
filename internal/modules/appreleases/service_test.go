@@ -322,6 +322,92 @@ func TestCreateArtifactUsesRequestedAppAndStorageKey(t *testing.T) {
 	}
 }
 
+func TestCreateReleaseMirrorsAndroidReleasePlan(t *testing.T) {
+	store := newAndroidReleaseMirrorStore()
+	service := NewServiceWithStore(Config{
+		AppKey:  "game-helper-android",
+		Name:    "Game Helper",
+		Channel: "stable",
+	}, store)
+
+	resp, err := service.CreateRelease(context.Background(), CreateReleaseRequest{
+		BuildID:           "build-1",
+		Channel:           "stable",
+		Title:             "Android 1.2.3",
+		Summary:           "ship android",
+		RolloutPercentage: 25,
+		TargetType:        "device",
+		TargetValue:       "device-1",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.ReleasePlan == nil {
+		t.Fatalf("expected mirrored release plan in response: %+v", resp)
+	}
+	if len(store.unitRequests) != 1 || store.unitRequests[0].UnitType != "android" {
+		t.Fatalf("expected android release unit upsert, got %#v", store.unitRequests)
+	}
+	unitReq := store.unitRequests[0]
+	if unitReq.ProjectKey != "release-center" || unitReq.UnitKey != "game-helper-android" || unitReq.AppID != "app-1" {
+		t.Fatalf("unexpected release unit request: %#v", unitReq)
+	}
+	if len(store.planRequests) != 1 {
+		t.Fatalf("expected one release plan request, got %#v", store.planRequests)
+	}
+	planReq := store.planRequests[0]
+	if planReq.ProjectKey != "release-center" || planReq.UnitKey != "game-helper-android" {
+		t.Fatalf("unexpected release plan linkage: %#v", planReq)
+	}
+	if planReq.EnvironmentKey != "prod" || planReq.Status != "draft" || planReq.RolloutPercentage != 25 {
+		t.Fatalf("unexpected release plan state: %#v", planReq)
+	}
+	if len(planReq.Artifacts) != 1 || planReq.Artifacts[0].AppBuildArtifactID != "artifact-1" {
+		t.Fatalf("expected app build artifact linkage, got %#v", planReq.Artifacts)
+	}
+	if planReq.Artifacts[0].ImmutableRef != "app_build_artifact:artifact-1" {
+		t.Fatalf("unexpected immutable ref: %#v", planReq.Artifacts[0])
+	}
+}
+
+func TestReleaseActionMirrorsAndroidReleasePlanStatus(t *testing.T) {
+	store := newAndroidReleaseMirrorStore()
+	service := NewServiceWithStore(Config{AppKey: "game-helper-android", Name: "Game Helper"}, store)
+
+	resp, err := service.ReleaseAction(context.Background(), "release-1", "publish")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.ReleasePlan == nil {
+		t.Fatalf("expected mirrored release plan in response: %+v", resp)
+	}
+	if len(store.planRequests) != 1 || store.planRequests[0].Status != "released" {
+		t.Fatalf("expected released plan sync, got %#v", store.planRequests)
+	}
+}
+
+func TestCreateReleaseMirrorFailureDoesNotBlockLegacyRelease(t *testing.T) {
+	store := newAndroidReleaseMirrorStore()
+	store.failCreatePlan = true
+	service := NewServiceWithStore(Config{AppKey: "game-helper-android", Name: "Game Helper"}, store)
+
+	resp, err := service.CreateRelease(context.Background(), CreateReleaseRequest{
+		BuildID:           "build-1",
+		Channel:           "stable",
+		Title:             "Android 1.2.3",
+		RolloutPercentage: 100,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !resp.OK || resp.Release.ID != "release-1" || resp.ReleasePlan != nil {
+		t.Fatalf("legacy release should still succeed without mirrored plan: %+v", resp)
+	}
+	if _, ok := findCapturedAudit(store.auditEvents, "release_plan.android_mirror_failed"); !ok {
+		t.Fatalf("expected mirror failure audit, got %#v", store.auditEvents)
+	}
+}
+
 func TestAdminOverviewAppliesConfiguredQualityPolicy(t *testing.T) {
 	store := &captureBuildStore{
 		adminOverview: AdminOverview{
@@ -493,4 +579,174 @@ func (s *captureBuildStore) InsertAudit(context.Context, string, string, string,
 
 func (s *captureBuildStore) AuditExists(context.Context, string, string) (bool, error) {
 	return false, nil
+}
+
+type androidReleaseMirrorStore struct {
+	captureBuildStore
+	release        AppReleaseAdmin
+	buildLookup    AppBuildJob
+	unitRequests   []CreateReleaseUnitRequest
+	planRequests   []CreateReleasePlanRequest
+	auditEvents    []capturedAudit
+	failCreatePlan bool
+}
+
+func newAndroidReleaseMirrorStore() *androidReleaseMirrorStore {
+	return &androidReleaseMirrorStore{
+		release: AppReleaseAdmin{
+			ID:                   "release-1",
+			AppID:                "app-1",
+			BuildID:              "build-1",
+			PackageName:          "com.example.gamehelper",
+			VersionName:          "1.2.3",
+			VersionCode:          123,
+			BuildNumber:          42,
+			Channel:              "stable",
+			BuildType:            "release",
+			GitRef:               "main",
+			GitCommit:            "abc123",
+			ArtifactPath:         "/api/v1/app/builds/build-1/download",
+			FileName:             "game-helper.apk",
+			SizeBytes:            1024,
+			SHA256:               "sha256-value",
+			Status:               "draft",
+			Title:                "Android 1.2.3",
+			Summary:              "ship android",
+			ReleaseNotesMarkdown: "notes",
+			UpdateLevel:          "normal",
+			RolloutPercentage:    25,
+			TargetType:           "device",
+			TargetValue:          "device-1",
+			CreatedBy:            "admin",
+		},
+		buildLookup: AppBuildJob{
+			ID:           "build-1",
+			VersionName:  "1.2.3",
+			VersionCode:  123,
+			BuildNumber:  42,
+			Channel:      "stable",
+			BuildType:    "release",
+			GitCommit:    "abc123",
+			ArtifactType: "apk",
+			ArtifactPath: "/api/v1/app/builds/build-1/download",
+			FileName:     "game-helper.apk",
+			ArtifactSize: 1024,
+			SHA256:       "sha256-value",
+			Artifacts: []AppBuildArtifact{{
+				ID:           "artifact-1",
+				BuildID:      "build-1",
+				Name:         "release-apk",
+				ArtifactType: "apk",
+				ArtifactPath: "/api/v1/app/build-artifacts/artifact-1/download",
+				FileName:     "game-helper.apk",
+				SizeBytes:    1024,
+				SHA256:       "sha256-value",
+			}},
+		},
+	}
+}
+
+func (s *androidReleaseMirrorStore) CreateRelease(_ context.Context, req CreateReleaseRequest) (AppReleaseAdmin, error) {
+	release := s.release
+	release.BuildID = req.BuildID
+	release.Channel = req.Channel
+	release.Title = req.Title
+	release.Summary = req.Summary
+	release.ReleaseNotesMarkdown = req.ReleaseNotesMarkdown
+	release.RolloutPercentage = normalizeRollout(req.RolloutPercentage)
+	release.TargetType = normalizeTargetType(req.TargetType)
+	release.TargetValue = req.TargetValue
+	s.release = release
+	return release, nil
+}
+
+func (s *androidReleaseMirrorStore) UpdateReleaseStatus(_ context.Context, id, status string, publish bool) (AppReleaseAdmin, error) {
+	release := s.release
+	release.ID = id
+	release.Status = status
+	s.release = release
+	return release, nil
+}
+
+func (s *androidReleaseMirrorStore) AppBuild(_ context.Context, buildID string) (AppBuildJob, error) {
+	if buildID != s.buildLookup.ID {
+		return AppBuildJob{}, errCaptureStoreNotFound
+	}
+	return s.buildLookup, nil
+}
+
+func (s *androidReleaseMirrorStore) ReleasePlanOverview(context.Context) (ReleasePlanOverview, error) {
+	return ReleasePlanOverview{}, nil
+}
+
+func (s *androidReleaseMirrorStore) ReleasePlan(context.Context, string) (ReleasePlanAdmin, error) {
+	return ReleasePlanAdmin{}, errCaptureStoreNotFound
+}
+
+func (s *androidReleaseMirrorStore) CreateReleaseUnit(_ context.Context, req CreateReleaseUnitRequest) (ReleaseUnitAdmin, error) {
+	s.unitRequests = append(s.unitRequests, req)
+	return ReleaseUnitAdmin{
+		ID:             "unit-1",
+		ProjectID:      "project-1",
+		ProjectKey:     req.ProjectKey,
+		AppID:          req.AppID,
+		UnitKey:        req.UnitKey,
+		Name:           req.Name,
+		UnitType:       req.UnitType,
+		DefaultChannel: req.DefaultChannel,
+		Enabled:        boolValue(req.Enabled, true),
+	}, nil
+}
+
+func (s *androidReleaseMirrorStore) CreateReleasePlan(_ context.Context, req CreateReleasePlanRequest) (ReleasePlanAdmin, error) {
+	s.planRequests = append(s.planRequests, req)
+	if s.failCreatePlan {
+		return ReleasePlanAdmin{}, errors.New("mirror failed")
+	}
+	return ReleasePlanAdmin{
+		ID:                "plan-1",
+		ProjectID:         "project-1",
+		ProjectKey:        req.ProjectKey,
+		ReleaseUnitID:     "unit-1",
+		UnitKey:           req.UnitKey,
+		UnitType:          "android",
+		EnvironmentID:     "env-1",
+		EnvironmentKey:    req.EnvironmentKey,
+		PlanKey:           req.PlanKey,
+		Title:             req.Title,
+		Description:       req.Description,
+		VersionName:       req.VersionName,
+		BuildNumber:       req.BuildNumber,
+		GitCommit:         req.GitCommit,
+		Channel:           req.Channel,
+		Status:            req.Status,
+		RolloutPercentage: req.RolloutPercentage,
+		TargetType:        req.TargetType,
+		TargetValue:       req.TargetValue,
+		CreatedBy:         req.CreatedBy,
+		Artifacts: []ReleasePlanArtifactAdmin{{
+			ID:                 "plan-artifact-1",
+			AppBuildID:         req.Artifacts[0].AppBuildID,
+			AppBuildArtifactID: req.Artifacts[0].AppBuildArtifactID,
+			ArtifactName:       req.Artifacts[0].ArtifactName,
+			ArtifactType:       req.Artifacts[0].ArtifactType,
+			FileName:           req.Artifacts[0].FileName,
+			ImmutableRef:       req.Artifacts[0].ImmutableRef,
+		}},
+	}, nil
+}
+
+func (s *androidReleaseMirrorStore) UpdateReleasePlanStatus(_ context.Context, planID, status string, req ReleasePlanActionRequest) (ReleasePlanAdmin, error) {
+	return ReleasePlanAdmin{ID: planID, Status: status}, nil
+}
+
+func (s *androidReleaseMirrorStore) InsertAudit(_ context.Context, action, targetType, targetID, message string, metadata map[string]any) error {
+	s.auditEvents = append(s.auditEvents, capturedAudit{
+		action:     action,
+		targetType: targetType,
+		targetID:   targetID,
+		message:    message,
+		metadata:   metadata,
+	})
+	return nil
 }

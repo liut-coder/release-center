@@ -24,6 +24,10 @@ type BlobStore interface {
 	Open(ctx context.Context, key string) (io.ReadCloser, error)
 }
 
+type AppBuildLookupStore interface {
+	AppBuild(ctx context.Context, buildID string) (AppBuildJob, error)
+}
+
 const (
 	qualityAlertNotifyAuditAction     = "quality_alert.notify"
 	qualityAlertNotifyFailedAction    = "quality_alert.notify_failed"
@@ -545,7 +549,12 @@ func (s *Service) CreateRelease(ctx context.Context, req CreateReleaseRequest) (
 		"channel":      release.Channel,
 		"status":       release.Status,
 	})
-	return AdminActionResponse{OK: true, Release: release, MessageZh: "发布已创建"}, nil
+	resp := AdminActionResponse{OK: true, Release: release, MessageZh: "发布已创建"}
+	if plan := s.syncAndroidReleasePlanOrAudit(ctx, release, "create"); plan != nil {
+		resp.ReleasePlan = plan
+		resp.MessageZh = "发布已创建并同步 Android 发布计划"
+	}
+	return resp, nil
 }
 
 func (s *Service) ReleaseAction(ctx context.Context, id, action string) (AdminActionResponse, error) {
@@ -569,7 +578,12 @@ func (s *Service) ReleaseAction(ctx context.Context, id, action string) (AdminAc
 	_ = s.store.InsertAudit(ctx, "release."+action, "app_release", release.ID, "更新 App 发布状态", map[string]any{
 		"status": status,
 	})
-	return AdminActionResponse{OK: true, Release: release, MessageZh: "发布状态已更新"}, nil
+	resp := AdminActionResponse{OK: true, Release: release, MessageZh: "发布状态已更新"}
+	if plan := s.syncAndroidReleasePlanOrAudit(ctx, release, action); plan != nil {
+		resp.ReleasePlan = plan
+		resp.MessageZh = "发布状态已更新并同步 Android 发布计划"
+	}
+	return resp, nil
 }
 
 func (s *Service) UpdateReleaseRollout(ctx context.Context, id string, req UpdateRolloutRequest) (AdminActionResponse, error) {
@@ -580,7 +594,12 @@ func (s *Service) UpdateReleaseRollout(ctx context.Context, id string, req Updat
 	_ = s.store.InsertAudit(ctx, "release.rollout", "app_release", release.ID, "调整 App 发布灰度", map[string]any{
 		"rollout_percentage": release.RolloutPercentage,
 	})
-	return AdminActionResponse{OK: true, Release: release, MessageZh: "灰度比例已更新"}, nil
+	resp := AdminActionResponse{OK: true, Release: release, MessageZh: "灰度比例已更新"}
+	if plan := s.syncAndroidReleasePlanOrAudit(ctx, release, "rollout"); plan != nil {
+		resp.ReleasePlan = plan
+		resp.MessageZh = "灰度比例已更新并同步 Android 发布计划"
+	}
+	return resp, nil
 }
 
 func (s *Service) UpdateReleaseNotes(ctx context.Context, id string, req UpdateNotesRequest) (AdminActionResponse, error) {
@@ -593,7 +612,169 @@ func (s *Service) UpdateReleaseNotes(ctx context.Context, id string, req UpdateN
 		return AdminActionResponse{}, err
 	}
 	_ = s.store.InsertAudit(ctx, "release.notes", "app_release", release.ID, "更新 App 发布说明", nil)
-	return AdminActionResponse{OK: true, Release: release, MessageZh: "发布说明已更新"}, nil
+	resp := AdminActionResponse{OK: true, Release: release, MessageZh: "发布说明已更新"}
+	if plan := s.syncAndroidReleasePlanOrAudit(ctx, release, "notes"); plan != nil {
+		resp.ReleasePlan = plan
+		resp.MessageZh = "发布说明已更新并同步 Android 发布计划"
+	}
+	return resp, nil
+}
+
+func (s *Service) syncAndroidReleasePlanOrAudit(ctx context.Context, release AppReleaseAdmin, sourceAction string) *ReleasePlanAdmin {
+	plan, err := s.syncAndroidReleasePlan(ctx, release, sourceAction)
+	if err == nil {
+		return plan
+	}
+	s.insertAudit(ctx, "release_plan.android_mirror_failed", "app_release", release.ID, "Android 发布计划同步失败", map[string]any{
+		"source_action": sourceAction,
+		"build_id":      release.BuildID,
+		"version_name":  release.VersionName,
+		"build_number":  release.BuildNumber,
+		"channel":       release.Channel,
+		"error":         err.Error(),
+	})
+	return nil
+}
+
+func (s *Service) syncAndroidReleasePlan(ctx context.Context, release AppReleaseAdmin, sourceAction string) (*ReleasePlanAdmin, error) {
+	if strings.TrimSpace(release.ID) == "" || strings.TrimSpace(release.BuildID) == "" {
+		return nil, nil
+	}
+	if _, ok := s.store.(ReleasePlanStore); !ok {
+		return nil, nil
+	}
+	buildStore, ok := s.store.(AppBuildLookupStore)
+	if !ok {
+		return nil, nil
+	}
+	build, err := buildStore.AppBuild(ctx, release.BuildID)
+	if err != nil {
+		return nil, err
+	}
+	projectKey := legacyAndroidReleaseProjectKey()
+	unitKey := legacyAndroidReleaseUnitKey(s.cfg, release)
+	enabled := true
+	if _, err := s.CreateReleaseUnit(ctx, CreateReleaseUnitRequest{
+		ProjectKey:     projectKey,
+		AppID:          release.AppID,
+		UnitKey:        unitKey,
+		Name:           legacyAndroidReleaseUnitName(s.cfg, release),
+		UnitType:       "android",
+		DefaultChannel: firstNonBlank(release.Channel, s.cfg.Channel, "dev"),
+		Enabled:        &enabled,
+		Metadata: map[string]any{
+			"source":       "legacy_app_release",
+			"app_key":      s.cfg.AppKey,
+			"package_name": release.PackageName,
+		},
+	}); err != nil {
+		return nil, err
+	}
+	resp, err := s.CreateReleasePlan(ctx, CreateReleasePlanRequest{
+		ProjectKey:        projectKey,
+		UnitKey:           unitKey,
+		EnvironmentKey:    legacyAndroidReleaseEnvironment(release.Channel),
+		PlanKey:           legacyAndroidReleasePlanKey(release),
+		Title:             firstNonBlank(release.Title, fmt.Sprintf("Android %s", release.VersionName)),
+		Description:       release.Summary,
+		VersionName:       release.VersionName,
+		BuildNumber:       release.BuildNumber,
+		GitCommit:         release.GitCommit,
+		Channel:           firstNonBlank(release.Channel, s.cfg.Channel),
+		Status:            normalizeReleasePlanStatus(release.Status),
+		RolloutPercentage: normalizeRollout(release.RolloutPercentage),
+		TargetType:        normalizeTargetType(release.TargetType),
+		TargetValue:       release.TargetValue,
+		CreatedBy:         firstNonBlank(release.CreatedBy, "legacy_app_release"),
+		Artifacts:         []ReleasePlanArtifactRequest{legacyAndroidReleaseArtifact(release, build)},
+		Metadata: map[string]any{
+			"source":         "legacy_app_release",
+			"source_action":  sourceAction,
+			"app_release_id": release.ID,
+			"update_level":   release.UpdateLevel,
+			"version_code":   release.VersionCode,
+		},
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &resp.Plan, nil
+}
+
+func legacyAndroidReleaseProjectKey() string {
+	return "release-center"
+}
+
+func legacyAndroidReleaseUnitKey(cfg Config, release AppReleaseAdmin) string {
+	return safeFilePart(firstNonBlank(cfg.AppKey, release.PackageName, "android-app"))
+}
+
+func legacyAndroidReleaseUnitName(cfg Config, release AppReleaseAdmin) string {
+	return firstNonBlank(cfg.Name, release.PackageName, "Android App")
+}
+
+func legacyAndroidReleaseEnvironment(channel string) string {
+	switch strings.ToLower(strings.TrimSpace(channel)) {
+	case "dev", "develop", "development", "alpha", "canary":
+		return "dev"
+	case "test", "testing", "qa":
+		return "test"
+	case "staging", "stage", "pre", "preview", "beta":
+		return "staging"
+	default:
+		return "prod"
+	}
+}
+
+func legacyAndroidReleasePlanKey(release AppReleaseAdmin) string {
+	return "android-apk-" + safeFilePart(firstNonBlank(release.ID, fmt.Sprintf("%s-%d-%s", release.VersionName, release.BuildNumber, release.Channel)))
+}
+
+func legacyAndroidReleaseArtifact(release AppReleaseAdmin, build AppBuildJob) ReleasePlanArtifactRequest {
+	artifact := preferredAndroidBuildArtifact(build)
+	artifactName := firstNonBlank(artifact.Name, release.FileName, build.ArtifactType, "apk")
+	artifactType := firstNonBlank(artifact.ArtifactType, build.ArtifactType, "apk")
+	artifactPath := firstNonBlank(artifact.ArtifactPath, release.ArtifactPath, release.APKPath, release.DownloadURL, build.ArtifactPath)
+	fileName := firstNonBlank(artifact.FileName, release.FileName, build.FileName)
+	if fileName == "" {
+		if base := path.Base(artifactPath); base != "." && base != "/" {
+			fileName = base
+		}
+	}
+	immutableRef := "app_build:" + build.ID
+	if artifact.ID != "" {
+		immutableRef = "app_build_artifact:" + artifact.ID
+	}
+	return ReleasePlanArtifactRequest{
+		AppBuildID:         build.ID,
+		AppBuildArtifactID: artifact.ID,
+		ArtifactName:       artifactName,
+		ArtifactType:       artifactType,
+		FileName:           fileName,
+		ImmutableRef:       immutableRef,
+		Metadata: map[string]any{
+			"source":         "legacy_app_release",
+			"app_release_id": release.ID,
+			"artifact_path":  artifactPath,
+			"download_url":   firstNonBlank(release.DownloadURL, artifactPath),
+			"sha256":         firstNonBlank(artifact.SHA256, release.SHA256, build.SHA256),
+			"size_bytes":     firstPositiveInt64(artifact.SizeBytes, release.SizeBytes, build.ArtifactSize),
+			"version_code":   release.VersionCode,
+		},
+	}
+}
+
+func preferredAndroidBuildArtifact(build AppBuildJob) AppBuildArtifact {
+	if len(build.Artifacts) == 0 {
+		return AppBuildArtifact{}
+	}
+	for _, artifact := range build.Artifacts {
+		switch strings.ToLower(strings.TrimSpace(artifact.ArtifactType)) {
+		case "apk", "aab":
+			return artifact
+		}
+	}
+	return build.Artifacts[0]
 }
 
 func (s *Service) CreateResourceVersion(ctx context.Context, req CreateResourceVersionRequest, uploads []UploadedResourcePackage, blobs BlobStore) (ResourceActionResponse, error) {

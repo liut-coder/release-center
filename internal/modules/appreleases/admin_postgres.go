@@ -264,6 +264,10 @@ func (s *PostgresStore) CreateBuild(ctx context.Context, build AppBuildJob, cfg 
 	return s.createBuild(ctx, build, cfg, true)
 }
 
+func (s *PostgresStore) AppBuild(ctx context.Context, buildID string) (AppBuildJob, error) {
+	return s.getAdminBuild(ctx, strings.TrimSpace(buildID))
+}
+
 func (s *PostgresStore) createBuild(ctx context.Context, build AppBuildJob, cfg Config, replacePrimaryArtifact bool) (AppBuildJob, error) {
 	tx, err := s.db.Begin(ctx)
 	if err != nil {
