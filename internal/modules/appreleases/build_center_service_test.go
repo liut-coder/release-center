@@ -2,6 +2,7 @@ package appreleases
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
@@ -218,6 +219,151 @@ func TestBuildCenterConfigActionsInsertAudit(t *testing.T) {
 	}
 }
 
+func TestCreateBuildCenterRunDispatchesWindowsProfileToWorker(t *testing.T) {
+	store := &buildCenterAuditStore{}
+	service := &Service{store: store}
+	resp, err := service.CreateBuildCenterRun(context.Background(), "desktop-tool", BuildCenterRunRequest{
+		ProfileKey:  "windows",
+		Action:      "all",
+		GitRef:      "main",
+		VersionName: "2.0.0",
+		VersionCode: 20,
+		Channel:     "stable",
+		StartedBy:   "tester",
+	})
+	if err != nil {
+		t.Fatalf("CreateBuildCenterRun() error = %v", err)
+	}
+	if resp.Run.ID != "run-1" {
+		t.Fatalf("unexpected run response: %#v", resp)
+	}
+	if len(store.workerRequests) != 1 {
+		t.Fatalf("expected one worker task, got %#v", store.workerRequests)
+	}
+	req := store.workerRequests[0]
+	if req.BuildRunID != "run-1" || req.BuildProfileID != "profile-1" || req.TaskType != "build" || req.Action != "all" {
+		t.Fatalf("unexpected worker request: %#v", req)
+	}
+	if len(req.RequiredLabels) != 1 || req.RequiredLabels[0] != "windows" {
+		t.Fatalf("expected windows label, got %#v", req.RequiredLabels)
+	}
+	env, ok := req.Metadata["env"].(map[string]any)
+	if !ok || env["VERSION_NAME"] != "2.0.0" || env["CHANNEL"] != "stable" {
+		t.Fatalf("expected version env metadata, got %#v", req.Metadata)
+	}
+	if store.startedRunID != "run-1" {
+		t.Fatalf("expected run to be marked started, got %q", store.startedRunID)
+	}
+	if _, ok := findCapturedAudit(store.audits, "build_center.run_worker_dispatch"); !ok {
+		t.Fatalf("expected worker dispatch audit, got %#v", store.audits)
+	}
+}
+
+func TestWindowsBuildCenterRunWorkerLifecycleMirrorsArtifacts(t *testing.T) {
+	store := &buildCenterAuditStore{}
+	service := &Service{store: store}
+	ctx := context.Background()
+
+	runResp, err := service.CreateBuildCenterRun(ctx, "desktop-tool", BuildCenterRunRequest{
+		ProfileKey:  "windows",
+		Action:      "all",
+		GitRef:      "refs/tags/v2.0.0",
+		VersionName: "2.0.0",
+		VersionCode: 20,
+		Channel:     "stable",
+		StartedBy:   "tester",
+	})
+	if err != nil {
+		t.Fatalf("CreateBuildCenterRun() error = %v", err)
+	}
+	if runResp.Run.Status != "running" || store.startedRunID != "run-1" {
+		t.Fatalf("expected running Windows build run, resp=%#v started=%q", runResp, store.startedRunID)
+	}
+
+	if _, err := service.RegisterWorker(ctx, WorkerRegisterRequest{WorkerKey: "linux-worker", Labels: []string{"linux", "go"}, Capacity: 1}); err != nil {
+		t.Fatalf("RegisterWorker(linux) error = %v", err)
+	}
+	linuxNext, err := service.NextWorkerTask(ctx, WorkerTaskNextRequest{WorkerKey: "linux-worker"})
+	if err != nil {
+		t.Fatalf("NextWorkerTask(linux) error = %v", err)
+	}
+	if linuxNext.Task != nil {
+		t.Fatalf("linux worker should not lease Windows task: %#v", linuxNext.Task)
+	}
+
+	if _, err := service.RegisterWorker(ctx, WorkerRegisterRequest{WorkerKey: "windows-worker", Labels: []string{"windows", "go", "amd64"}, Capacity: 1}); err != nil {
+		t.Fatalf("RegisterWorker(windows) error = %v", err)
+	}
+	workerNext, err := service.NextWorkerTask(ctx, WorkerTaskNextRequest{WorkerKey: "windows-worker"})
+	if err != nil {
+		t.Fatalf("NextWorkerTask(windows) error = %v", err)
+	}
+	if workerNext.Task == nil {
+		t.Fatal("expected windows worker to lease build task")
+	}
+	if workerNext.Task.BuildRunID != "run-1" || workerNext.Task.LeaseToken == "" {
+		t.Fatalf("unexpected leased task: %#v", workerNext.Task)
+	}
+
+	var metadata map[string]any
+	if err := json.Unmarshal(workerNext.Task.Metadata, &metadata); err != nil {
+		t.Fatalf("task metadata should be json: %v", err)
+	}
+	if metadata["source"] != "build_center" || metadata["build_run_id"] != "run-1" {
+		t.Fatalf("unexpected task metadata: %#v", metadata)
+	}
+	env, ok := metadata["env"].(map[string]any)
+	if !ok || env["VERSION_NAME"] != "2.0.0" || env["CHANNEL"] != "stable" {
+		t.Fatalf("expected version/channel env metadata, got %#v", metadata["env"])
+	}
+	rules, ok := metadata["artifact_rules"].([]any)
+	if !ok || len(rules) != 2 {
+		t.Fatalf("expected windows artifact rules in metadata, got %#v", metadata["artifact_rules"])
+	}
+
+	completeResp, err := service.CompleteWorkerTask(ctx, workerNext.Task.ID, WorkerTaskCompleteRequest{
+		WorkerKey:  "windows-worker",
+		LeaseToken: workerNext.Task.LeaseToken,
+		Artifacts: []WorkerTaskArtifact{
+			{
+				Name:         "windows-exe",
+				ArtifactType: "windows_exe",
+				FileName:     "desktop-tool.exe",
+				LocalPath:    `C:\build-worker\workspace\desktop-tool\dist\windows\desktop-tool.exe`,
+				SizeBytes:    4096,
+				SHA256:       "aaa111",
+			},
+			{
+				Name:         "windows-archive",
+				ArtifactType: "windows_archive",
+				FileName:     "desktop-tool-2.0.0-windows-amd64.zip",
+				LocalPath:    `C:\build-worker\workspace\desktop-tool\dist\windows\desktop-tool-2.0.0-windows-amd64.zip`,
+				SizeBytes:    8192,
+				SHA256:       "bbb222",
+			},
+		},
+		Metadata: map[string]any{"worker_artifact_count": 2},
+	})
+	if err != nil {
+		t.Fatalf("CompleteWorkerTask() error = %v", err)
+	}
+	if !completeResp.OK || completeResp.Task == nil || completeResp.Task.Status != "success" {
+		t.Fatalf("unexpected complete response: %#v", completeResp)
+	}
+	if store.lastCompletedRunID != "run-1" || store.lastCompletedPatch.Status != "success" || store.lastCompletedPatch.UploadStatus != "uploaded" {
+		t.Fatalf("expected build run success patch, run=%q patch=%#v", store.lastCompletedRunID, store.lastCompletedPatch)
+	}
+	if store.mirroredRunID != "run-1" || len(store.mirroredArtifacts) != 2 {
+		t.Fatalf("expected mirrored artifacts for run-1, run=%q artifacts=%#v", store.mirroredRunID, store.mirroredArtifacts)
+	}
+	if store.mirroredArtifacts[0].ArtifactType != "windows_exe" || store.mirroredArtifacts[0].UploadStatus != "local" {
+		t.Fatalf("unexpected mirrored exe: %#v", store.mirroredArtifacts[0])
+	}
+	if store.mirroredArtifacts[1].ArtifactType != "windows_archive" || store.mirroredArtifacts[1].SHA256 != "bbb222" {
+		t.Fatalf("unexpected mirrored archive: %#v", store.mirroredArtifacts[1])
+	}
+}
+
 func TestCreateBuildCenterRunInsertsAudit(t *testing.T) {
 	root := t.TempDir()
 	scriptsDir := filepath.Join(root, "scripts")
@@ -277,9 +423,17 @@ exit 0
 
 type buildCenterAuditStore struct {
 	Store
-	audits        []capturedAudit
-	completed     chan BuildCenterRunPatch
-	webhookRoutes []WebhookBuildRoute
+	audits             []capturedAudit
+	completed          chan BuildCenterRunPatch
+	webhookRoutes      []WebhookBuildRoute
+	workerRequests     []CreateWorkerTaskRequest
+	startedRunID       string
+	workers            map[string]BuildWorkerAdmin
+	workerTasks        []WorkerTaskAdmin
+	mirroredRunID      string
+	mirroredArtifacts  []BuildCenterRunArtifact
+	lastCompletedRunID string
+	lastCompletedPatch BuildCenterRunPatch
 }
 
 func (s *buildCenterAuditStore) InsertAudit(_ context.Context, action, targetType, targetID, message string, metadata map[string]any) error {
@@ -372,6 +526,12 @@ func (s *buildCenterAuditStore) MatchWebhookBuildRoutes(_ context.Context, event
 }
 
 func (s *buildCenterAuditStore) CreateBuildCenterRun(_ context.Context, projectKey string, req BuildCenterRunRequest) (BuildCenterRunAdmin, BuildProfileAdmin, error) {
+	stackType := "node"
+	buildType := "web"
+	if req.ProfileKey == "windows" {
+		stackType = "windows"
+		buildType = "windows"
+	}
 	return BuildCenterRunAdmin{
 			ID:             "run-1",
 			ProjectID:      "project-1",
@@ -390,14 +550,88 @@ func (s *buildCenterAuditStore) CreateBuildCenterRun(_ context.Context, projectK
 			ID:                 "profile-1",
 			ProfileKey:         req.ProfileKey,
 			BuildCenterProject: "release-center",
+			StackType:          stackType,
+			BuildType:          buildType,
+			Commands:           json.RawMessage(`{"all":"buildctl all release-center"}`),
+			ArtifactRules:      json.RawMessage(`[{"name":"windows-exe","type":"windows_exe","path":"dist/windows/*.exe"},{"name":"windows-archive","type":"windows_archive","path":"dist/windows/*.zip"}]`),
 		}, nil
 }
 
+func (s *buildCenterAuditStore) CreateWorkerTask(_ context.Context, req CreateWorkerTaskRequest) (WorkerTaskAdmin, error) {
+	s.workerRequests = append(s.workerRequests, req)
+	task := WorkerTaskAdmin{ID: "worker-task-1", BuildRunID: req.BuildRunID, BuildProfileID: req.BuildProfileID, TaskType: req.TaskType, Action: req.Action, Status: "queued", RequiredLabels: req.RequiredLabels, Priority: req.Priority, Metadata: json.RawMessage(jsonb(req.Metadata))}
+	s.workerTasks = append(s.workerTasks, task)
+	return task, nil
+}
+
+func (s *buildCenterAuditStore) WorkerOverview(_ context.Context) (WorkerOverviewResponse, error) {
+	return WorkerOverviewResponse{}, nil
+}
+
+func (s *buildCenterAuditStore) RegisterWorker(_ context.Context, req WorkerRegisterRequest) (BuildWorkerAdmin, error) {
+	if s.workers == nil {
+		s.workers = map[string]BuildWorkerAdmin{}
+	}
+	worker := BuildWorkerAdmin{ID: "worker-" + req.WorkerKey, WorkerKey: req.WorkerKey, Labels: req.Labels, Capacity: req.Capacity, Status: "online"}
+	s.workers[req.WorkerKey] = worker
+	return worker, nil
+}
+
+func (s *buildCenterAuditStore) SaveWorkerHeartbeat(_ context.Context, req WorkerHeartbeatRequest) (BuildWorkerAdmin, error) {
+	return BuildWorkerAdmin{WorkerKey: req.WorkerKey, Labels: req.Labels, Status: req.Status, Capacity: req.Capacity}, nil
+}
+
+func (s *buildCenterAuditStore) NextWorkerTask(_ context.Context, req WorkerTaskNextRequest) (*WorkerTaskAdmin, error) {
+	worker, ok := s.workers[req.WorkerKey]
+	if !ok {
+		return nil, nil
+	}
+	for i := range s.workerTasks {
+		task := &s.workerTasks[i]
+		if task.Status != "queued" || !labelsContainAll(worker.Labels, task.RequiredLabels) {
+			continue
+		}
+		task.Status = "leased"
+		task.WorkerID = worker.ID
+		task.LeaseToken = "lease-1"
+		task.Attempts++
+		return task, nil
+	}
+	return nil, nil
+}
+
+func (s *buildCenterAuditStore) AppendWorkerTaskLogs(_ context.Context, taskID string, _ WorkerTaskLogsRequest) (WorkerTaskAdmin, error) {
+	return WorkerTaskAdmin{ID: taskID, Status: "running"}, nil
+}
+
+func (s *buildCenterAuditStore) SaveWorkerTaskArtifacts(_ context.Context, taskID string, _ WorkerTaskArtifactsRequest) (WorkerTaskAdmin, error) {
+	return WorkerTaskAdmin{ID: taskID, BuildRunID: "run-1", TaskType: "build", Action: "all", Status: "running"}, nil
+}
+
+func (s *buildCenterAuditStore) CompleteWorkerTask(_ context.Context, taskID string, req WorkerTaskCompleteRequest) (WorkerTaskAdmin, error) {
+	for i := range s.workerTasks {
+		if s.workerTasks[i].ID == taskID {
+			s.workerTasks[i].Status = "success"
+			_, _ = s.CompleteBuildCenterRun(context.Background(), s.workerTasks[i].BuildRunID, BuildCenterRunPatch{Status: "success", UploadStatus: "uploaded", Metadata: map[string]any{"worker_task_id": taskID, "worker_key": req.WorkerKey}})
+			return s.workerTasks[i], nil
+		}
+	}
+	_, _ = s.CompleteBuildCenterRun(context.Background(), "run-1", BuildCenterRunPatch{Status: "success", UploadStatus: "uploaded", Metadata: map[string]any{"worker_task_id": taskID, "worker_key": req.WorkerKey}})
+	return WorkerTaskAdmin{ID: taskID, BuildRunID: "run-1", TaskType: "build", Action: "all", Status: "success"}, nil
+}
+
+func (s *buildCenterAuditStore) FailWorkerTask(_ context.Context, taskID string, _ WorkerTaskFailRequest) (WorkerTaskAdmin, error) {
+	return WorkerTaskAdmin{ID: taskID, Status: "failed"}, nil
+}
+
 func (s *buildCenterAuditStore) MarkBuildCenterRunStarted(_ context.Context, runID, logDir string) error {
+	s.startedRunID = runID
 	return nil
 }
 
 func (s *buildCenterAuditStore) CompleteBuildCenterRun(_ context.Context, runID string, patch BuildCenterRunPatch) (BuildCenterRunAdmin, error) {
+	s.lastCompletedRunID = runID
+	s.lastCompletedPatch = patch
 	if s.completed != nil {
 		s.completed <- patch
 	}
@@ -405,5 +639,20 @@ func (s *buildCenterAuditStore) CompleteBuildCenterRun(_ context.Context, runID 
 }
 
 func (s *buildCenterAuditStore) ReplaceBuildCenterRunArtifacts(_ context.Context, runID string, artifacts []BuildCenterRunArtifact) error {
+	s.mirroredRunID = runID
+	s.mirroredArtifacts = artifacts
 	return nil
+}
+
+func labelsContainAll(labels, required []string) bool {
+	seen := map[string]struct{}{}
+	for _, label := range labels {
+		seen[label] = struct{}{}
+	}
+	for _, label := range required {
+		if _, ok := seen[label]; !ok {
+			return false
+		}
+	}
+	return true
 }

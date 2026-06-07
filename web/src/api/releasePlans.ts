@@ -2,7 +2,7 @@ import { apiRequest } from "@/api/client";
 import type { DeploymentRecord } from "@/api/deployments";
 import type { WorkerTask } from "@/api/workers";
 
-export type ReleaseUnitType = "android" | "web" | "docs" | "worker" | "server" | "docker" | "config" | string;
+export type ReleaseUnitType = "android" | "web" | "docs" | "worker" | "server" | "windows" | "docker" | "config" | string;
 export type ReleasePlanStatus =
   | "draft"
   | "scheduled"

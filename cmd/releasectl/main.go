@@ -78,7 +78,7 @@ func runArtifactUpload(args []string) error {
 	versionName := fs.String("version-name", "", "app versionName")
 	versionCode := fs.Int("version-code", 0, "app versionCode")
 	buildNumber := fs.Int("build-number", 0, "CI build number")
-	artifactType := fs.String("artifact-type", "apk", "apk, aab, zip, web_dist, binary, docker_image, or artifact")
+	artifactType := fs.String("artifact-type", "apk", "apk, aab, zip, web_dist, binary, server_binary, docker_image, windows_exe, windows_msi, windows_installer, windows_archive, or artifact")
 	artifactURL := fs.String("artifact-url", "", "existing artifact URL to register")
 	fileName := fs.String("file-name", "", "artifact file name when registering a URL")
 	sizeBytes := fs.Int64("size-bytes", 0, "artifact size when registering a URL")

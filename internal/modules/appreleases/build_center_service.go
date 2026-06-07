@@ -29,6 +29,10 @@ type BuildCenterExecutionStore interface {
 	ReplaceBuildCenterRunArtifacts(ctx context.Context, runID string, artifacts []BuildCenterRunArtifact) error
 }
 
+type BuildCenterWorkerTaskStore interface {
+	CreateWorkerTask(ctx context.Context, req CreateWorkerTaskRequest) (WorkerTaskAdmin, error)
+}
+
 type BuildCenterWebhookStore interface {
 	MatchWebhookBuildRoutes(ctx context.Context, event WebhookEventRequest) ([]WebhookBuildRoute, error)
 }
@@ -376,8 +380,90 @@ func (s *Service) CreateBuildCenterRun(ctx context.Context, projectKey string, r
 		"channel":              run.Channel,
 		"started_by":           run.StartedBy,
 	})
+	if shouldDispatchBuildCenterRunToWorker(profile) {
+		if err := s.dispatchBuildCenterRunToWorker(ctx, projectKey, run, profile); err != nil {
+			return BuildCenterRunResponse{}, err
+		}
+		run.Status = "running"
+		return BuildCenterRunResponse{Run: run}, nil
+	}
 	go s.executeBuildCenterRun(run, profile, req)
 	return BuildCenterRunResponse{Run: run}, nil
+}
+
+func shouldDispatchBuildCenterRunToWorker(profile BuildProfileAdmin) bool {
+	return strings.EqualFold(strings.TrimSpace(profile.StackType), "windows") || strings.EqualFold(strings.TrimSpace(profile.BuildType), "windows")
+}
+
+func (s *Service) dispatchBuildCenterRunToWorker(ctx context.Context, projectKey string, run BuildCenterRunAdmin, profile BuildProfileAdmin) error {
+	workerStore, ok := s.store.(BuildCenterWorkerTaskStore)
+	if !ok {
+		return errWorkerStoreUnavailable
+	}
+	execStore, ok := s.store.(BuildCenterExecutionStore)
+	if !ok {
+		return errBuildCenterStoreUnavailable
+	}
+	metadata := map[string]any{
+		"source":               "build_center",
+		"project_key":          projectKey,
+		"build_run_id":         run.ID,
+		"build_profile_id":     profile.ID,
+		"profile_key":          profile.ProfileKey,
+		"build_center_project": profile.BuildCenterProject,
+		"stack_type":           profile.StackType,
+		"build_type":           profile.BuildType,
+		"git_ref":              run.GitRef,
+		"version_name":         run.VersionName,
+		"version_code":         run.VersionCode,
+		"channel":              run.Channel,
+		"commands":             rawMessageToAny(profile.Commands, map[string]any{}),
+		"artifact_rules":       rawMessageToAny(profile.ArtifactRules, []any{}),
+		"env": map[string]any{
+			"BUILD_CENTER_PROJECT": profile.BuildCenterProject,
+			"BUILD_RUN_ID":         run.ID,
+			"GIT_REF":              run.GitRef,
+			"VERSION_NAME":         run.VersionName,
+			"VERSION_CODE":         run.VersionCode,
+			"CHANNEL":              run.Channel,
+		},
+	}
+	task, err := workerStore.CreateWorkerTask(ctx, CreateWorkerTaskRequest{
+		ProjectKey:     projectKey,
+		BuildProfileID: profile.ID,
+		BuildRunID:     run.ID,
+		TaskType:       "build",
+		Action:         run.Action,
+		RequiredLabels: []string{"windows"},
+		Priority:       10,
+		Metadata:       metadata,
+	})
+	if err != nil {
+		return err
+	}
+	if err := execStore.MarkBuildCenterRunStarted(ctx, run.ID, ""); err != nil {
+		return err
+	}
+	s.insertAudit(ctx, "build_center.run_worker_dispatch", "worker_task", task.ID, "构建任务已投递 Windows Worker", map[string]any{
+		"project_key":      projectKey,
+		"build_run_id":     run.ID,
+		"build_profile_id": profile.ID,
+		"profile_key":      profile.ProfileKey,
+		"worker_task_id":   task.ID,
+		"required_labels":  []string{"windows"},
+	})
+	return nil
+}
+
+func rawMessageToAny(value json.RawMessage, fallback any) any {
+	if len(value) == 0 {
+		return fallback
+	}
+	var decoded any
+	if err := json.Unmarshal(value, &decoded); err != nil || decoded == nil {
+		return fallback
+	}
+	return decoded
 }
 
 func normalizeProjectLifecycleStatus(status string) string {

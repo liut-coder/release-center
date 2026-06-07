@@ -30,8 +30,8 @@ import { hasPermission, missingPermissionText } from "@/lib/permissions";
 const providerOptions = ["github", "gitea", "gitlab", "generic"];
 const lifecycleOptions = ["active", "paused", "archived"];
 const channelOptions = ["dev", "internal", "beta", "stable", "emergency"];
-const stackOptions = ["generic", "node", "go", "android", "docker", "cloudflare"];
-const buildTypeOptions = ["release", "debug", "web", "server", "worker", "docker"];
+const stackOptions = ["generic", "node", "go", "android", "windows", "docker", "cloudflare"];
+const buildTypeOptions = ["release", "debug", "web", "server", "worker", "windows", "docker"];
 const actionOptions = ["all", "status", "fetch", "prepare", "build", "image", "upload", "verify"];
 const eventOptions = ["push", "tag", "workflow_run", "*"];
 const setupTemplates = [
@@ -44,7 +44,7 @@ const setupTemplates = [
     buildAction: "all",
     profileKey: "web",
     profileName: "Web 构建",
-    commands: { all: ["buildctl all {{projectKey}}"] },
+    commands: { all: "buildctl all {{projectKey}}" },
     artifactRules: [{ name: "web-dist", type: "web_dist", path: "dist" }],
     routeAction: "all",
   },
@@ -57,7 +57,7 @@ const setupTemplates = [
     buildAction: "all",
     profileKey: "server",
     profileName: "服务端构建",
-    commands: { all: ["buildctl all {{projectKey}}"] },
+    commands: { all: "buildctl all {{projectKey}}" },
     artifactRules: [{ name: "server-binary", type: "server_binary", path: "bin" }],
     routeAction: "all",
   },
@@ -70,8 +70,24 @@ const setupTemplates = [
     buildAction: "all",
     profileKey: "android",
     profileName: "Android 构建",
-    commands: { all: ["buildctl all {{projectKey}}"] },
+    commands: { all: "buildctl all {{projectKey}}" },
     artifactRules: [{ name: "apk", type: "apk", path: "app/build/outputs/apk" }],
+    routeAction: "all",
+  },
+  {
+    key: "github_windows",
+    name: "GitHub Windows",
+    provider: "github",
+    stackType: "windows",
+    buildType: "windows",
+    buildAction: "all",
+    profileKey: "windows",
+    profileName: "Windows 构建",
+    commands: { all: "powershell -ExecutionPolicy Bypass -File scripts\\package-windows-go.ps1" },
+    artifactRules: [
+      { name: "windows-exe", type: "windows_exe", path: "dist/windows/*.exe" },
+      { name: "windows-archive", type: "windows_archive", path: "dist/windows/*.zip" },
+    ],
     routeAction: "all",
   },
 ] as const;

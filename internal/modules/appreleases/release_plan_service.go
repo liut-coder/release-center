@@ -564,7 +564,7 @@ func workerTaskIDs(tasks []WorkerTaskAdmin) []string {
 func normalizeReleaseUnitType(unitType string) string {
 	unitType = strings.ToLower(strings.TrimSpace(unitType))
 	switch unitType {
-	case "android", "web", "docs", "worker", "server", "docker", "config":
+	case "android", "web", "docs", "worker", "server", "windows", "docker", "config":
 		return unitType
 	default:
 		return unitType

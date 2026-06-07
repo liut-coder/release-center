@@ -42,6 +42,7 @@ const unitTypeOptions: Array<{ value: ReleaseUnitType; label: string }> = [
   { value: "docs", label: "Docs" },
   { value: "worker", label: "Worker" },
   { value: "server", label: "Server" },
+  { value: "windows", label: "Windows" },
   { value: "docker", label: "Docker" },
   { value: "config", label: "Config" },
 ];
@@ -73,6 +74,7 @@ export type ReleasePlanDraftSeed = {
   artifactType?: string;
   artifactFileName?: string;
   artifactRef?: string;
+  artifactBuildRunId?: string;
   artifactAppBuildId?: string;
   artifactAppBuildArtifactId?: string;
   unitTypeFilter?: string;
@@ -96,7 +98,7 @@ export function ReleasePlansPanel({ draftSeed }: { draftSeed?: ReleasePlanDraftS
   const [artifactFileName, setArtifactFileName] = useState(draftSeed?.artifactFileName ?? "");
   const [artifactRef, setArtifactRef] = useState(draftSeed?.artifactRef ?? "");
   const [selectedArtifactId, setSelectedArtifactId] = useState("");
-  const [artifactBuildRunId, setArtifactBuildRunId] = useState("");
+  const [artifactBuildRunId, setArtifactBuildRunId] = useState(draftSeed?.artifactBuildRunId ?? "");
   const [artifactAppBuildId, setArtifactAppBuildId] = useState(draftSeed?.artifactAppBuildId ?? "");
   const [artifactAppBuildArtifactId, setArtifactAppBuildArtifactId] = useState(draftSeed?.artifactAppBuildArtifactId ?? "");
   const [newUnitProjectKey, setNewUnitProjectKey] = useState("release-center");
@@ -133,11 +135,16 @@ export function ReleasePlansPanel({ draftSeed }: { draftSeed?: ReleasePlanDraftS
     if (draftSeed.artifactType) setArtifactType(draftSeed.artifactType);
     if (draftSeed.artifactFileName !== undefined) setArtifactFileName(draftSeed.artifactFileName);
     if (draftSeed.artifactRef !== undefined) setArtifactRef(draftSeed.artifactRef);
+    if (draftSeed.artifactBuildRunId !== undefined) setArtifactBuildRunId(draftSeed.artifactBuildRunId);
     if (draftSeed.artifactAppBuildId !== undefined) setArtifactAppBuildId(draftSeed.artifactAppBuildId);
     if (draftSeed.artifactAppBuildArtifactId !== undefined) setArtifactAppBuildArtifactId(draftSeed.artifactAppBuildArtifactId);
     if (draftSeed.unitTypeFilter) setUnitTypeFilter(draftSeed.unitTypeFilter);
+    if (draftSeed.projectKey) setNewUnitProjectKey(draftSeed.projectKey);
+    if (draftSeed.unitKey) setNewUnitKey(draftSeed.unitKey);
+    if (draftSeed.unitTypeFilter && draftSeed.unitTypeFilter !== "全部") setNewUnitType(draftSeed.unitTypeFilter);
+    if (draftSeed.unitKey && !newUnitName.trim()) setNewUnitName(`${draftSeed.unitKey} 发布单元`);
+    if (draftSeed.channel) setNewUnitChannel(draftSeed.channel);
     setSelectedArtifactId("");
-    setArtifactBuildRunId("");
     setMessage(draftSeed.message || "发布计划草稿已带入。");
     setMessageTone("success");
   }, [draftSeed?.seedKey]);

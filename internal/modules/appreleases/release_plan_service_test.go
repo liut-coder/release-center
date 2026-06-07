@@ -2,6 +2,7 @@ package appreleases
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"testing"
 )
@@ -9,6 +10,9 @@ import (
 func TestNormalizeReleaseUnitType(t *testing.T) {
 	if got := normalizeReleaseUnitType(" WEB "); got != "web" {
 		t.Fatalf("expected web, got %q", got)
+	}
+	if got := normalizeReleaseUnitType(" WINDOWS "); got != "windows" {
+		t.Fatalf("expected windows, got %q", got)
 	}
 	if got := normalizeReleaseUnitType("custom"); got != "custom" {
 		t.Fatalf("expected custom passthrough, got %q", got)
@@ -45,6 +49,61 @@ func TestDefaultReleasePlanKeyIncludesUnitEnvironmentAndVersion(t *testing.T) {
 	})
 	if !strings.HasPrefix(key, "admin-web-prod-1.0.0-") {
 		t.Fatalf("unexpected key prefix: %q", key)
+	}
+}
+
+func TestWindowsReleasePlanCreateAndDeployKeepsArtifactLinkage(t *testing.T) {
+	store := &releasePlanDeploymentStore{}
+	service := &Service{cfg: Config{Channel: "stable"}, store: store}
+
+	createResp, err := service.CreateReleasePlan(context.Background(), CreateReleasePlanRequest{
+		ProjectKey:        "desktop-tool",
+		UnitKey:           "windows-app",
+		EnvironmentKey:    "prod",
+		Title:             "Desktop Tool 1.0.0",
+		VersionName:       "1.0.0",
+		BuildNumber:       100,
+		GitCommit:         "win123",
+		Channel:           "stable",
+		RolloutPercentage: 100,
+		TargetType:        "all",
+		CreatedBy:         "tester",
+		Artifacts: []ReleasePlanArtifactRequest{{
+			BuildRunID:   "run-win-1",
+			ArtifactName: "windows-archive",
+			ArtifactType: "windows_archive",
+			FileName:     "desktop-tool-1.0.0-windows-amd64.zip",
+			ImmutableRef: "build_center:artifact-win-zip",
+		}},
+	})
+	if err != nil {
+		t.Fatalf("CreateReleasePlan(windows) error = %v", err)
+	}
+	if createResp.Plan.UnitType != "windows" || len(createResp.Plan.Artifacts) != 1 {
+		t.Fatalf("unexpected windows plan: %#v", createResp.Plan)
+	}
+	artifact := createResp.Plan.Artifacts[0]
+	if artifact.BuildRunID != "run-win-1" || artifact.ArtifactType != "windows_archive" || artifact.ImmutableRef != "build_center:artifact-win-zip" {
+		t.Fatalf("windows artifact linkage lost: %#v", artifact)
+	}
+
+	deployResp, err := service.CreateReleasePlanDeployment(context.Background(), createResp.Plan.ID, CreateReleasePlanDeploymentRequest{
+		TargetID:    "target-win-1",
+		DryRun:      true,
+		TriggeredBy: "tester",
+	})
+	if err != nil {
+		t.Fatalf("CreateReleasePlanDeployment(windows) error = %v", err)
+	}
+	if !deployResp.OK || len(deployResp.DeploymentRecords) != 1 || len(store.deploymentRequests) != 1 {
+		t.Fatalf("unexpected deploy response: resp=%#v requests=%#v", deployResp, store.deploymentRequests)
+	}
+	req := store.deploymentRequests[0]
+	if req.ProjectKey != "desktop-tool" || req.RunID != "run-win-1" || req.VersionName != "1.0.0" || req.BuildNumber != 100 {
+		t.Fatalf("unexpected windows deployment request: %#v", req)
+	}
+	if req.Metadata["artifact_type"] != "windows_archive" || req.Metadata["immutable_ref"] != "build_center:artifact-win-zip" {
+		t.Fatalf("windows deployment metadata missing artifact linkage: %#v", req.Metadata)
 	}
 }
 
@@ -365,6 +424,52 @@ type releasePlanDeploymentStore struct {
 
 func (s *releasePlanDeploymentStore) ReleasePlan(ctx context.Context, planID string) (ReleasePlanAdmin, error) {
 	return s.plan, nil
+}
+
+func (s *releasePlanDeploymentStore) CreateReleasePlan(_ context.Context, req CreateReleasePlanRequest) (ReleasePlanAdmin, error) {
+	plan := ReleasePlanAdmin{
+		ID:                "plan-1",
+		ProjectID:         "project-1",
+		ProjectKey:        req.ProjectKey,
+		ReleaseUnitID:     "unit-1",
+		UnitKey:           req.UnitKey,
+		UnitType:          releaseUnitTypeFromKey(req.UnitKey),
+		EnvironmentID:     "env-1",
+		EnvironmentKey:    req.EnvironmentKey,
+		PlanKey:           req.PlanKey,
+		Title:             req.Title,
+		VersionName:       req.VersionName,
+		BuildNumber:       req.BuildNumber,
+		GitCommit:         req.GitCommit,
+		Channel:           req.Channel,
+		Status:            req.Status,
+		RolloutPercentage: req.RolloutPercentage,
+		TargetType:        req.TargetType,
+		TargetValue:       req.TargetValue,
+		CreatedBy:         req.CreatedBy,
+	}
+	for index, artifact := range req.Artifacts {
+		plan.Artifacts = append(plan.Artifacts, ReleasePlanArtifactAdmin{
+			ID:                 fmt.Sprintf("plan-artifact-%d", index+1),
+			ReleasePlanID:      plan.ID,
+			BuildRunID:         artifact.BuildRunID,
+			AppBuildID:         artifact.AppBuildID,
+			AppBuildArtifactID: artifact.AppBuildArtifactID,
+			ArtifactName:       artifact.ArtifactName,
+			ArtifactType:       artifact.ArtifactType,
+			FileName:           artifact.FileName,
+			ImmutableRef:       artifact.ImmutableRef,
+		})
+	}
+	s.plan = plan
+	return plan, nil
+}
+
+func releaseUnitTypeFromKey(unitKey string) string {
+	if unitKey == "windows-app" {
+		return "windows"
+	}
+	return "web"
 }
 
 func (s *releasePlanDeploymentStore) CreateDeploymentRecord(ctx context.Context, req CreateDeploymentRequest) (DeploymentRecordAdmin, error) {

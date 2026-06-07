@@ -934,7 +934,7 @@ func normalizeBuildStatus(value string) string {
 
 func normalizeArtifactType(value string) string {
 	switch strings.TrimSpace(value) {
-	case "apk", "aab", "zip", "web_dist", "binary", "docker_image", "artifact":
+	case "apk", "aab", "zip", "web_dist", "binary", "server_binary", "docker_image", "windows_exe", "windows_msi", "windows_installer", "windows_archive", "artifact":
 		return strings.TrimSpace(value)
 	default:
 		return "apk"

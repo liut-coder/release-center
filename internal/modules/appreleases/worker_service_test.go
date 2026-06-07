@@ -70,6 +70,50 @@ func TestSaveWorkerTaskArtifactsMirrorsBuildCenterArtifacts(t *testing.T) {
 	assertWorkerArtifactMirror(t, store, "run-1", "uploaded")
 }
 
+func TestCompleteWorkerTaskMirrorsWindowsArtifacts(t *testing.T) {
+	store := &workerArtifactMirrorStore{}
+	service := &Service{store: store}
+
+	resp, err := service.CompleteWorkerTask(context.Background(), "task-1", WorkerTaskCompleteRequest{
+		WorkerKey:  "windows-worker-1",
+		LeaseToken: "lease-1",
+		Artifacts: []WorkerTaskArtifact{
+			{
+				Name:         "windows-exe",
+				ArtifactType: "windows_exe",
+				FileName:     "desktop.exe",
+				LocalPath:    `C:\build-worker\workspace\desktop-tool\dist\windows\desktop.exe`,
+				SizeBytes:    4096,
+				SHA256:       "aaa111",
+			},
+			{
+				Name:         "windows-archive",
+				ArtifactType: "windows_archive",
+				FileName:     "desktop-1.0.0-windows-amd64.zip",
+				LocalPath:    `C:\build-worker\workspace\desktop-tool\dist\windows\desktop-1.0.0-windows-amd64.zip`,
+				SizeBytes:    8192,
+				SHA256:       "bbb222",
+			},
+		},
+		Metadata: map[string]any{"worker_artifact_count": 2},
+	})
+	if err != nil {
+		t.Fatalf("CompleteWorkerTask() error = %v", err)
+	}
+	if !resp.OK || resp.Task == nil {
+		t.Fatalf("unexpected response: %#v", resp)
+	}
+	if store.mirroredRunID != "run-1" || len(store.mirroredArtifacts) != 2 {
+		t.Fatalf("expected two mirrored windows artifacts, run=%q artifacts=%#v", store.mirroredRunID, store.mirroredArtifacts)
+	}
+	if store.mirroredArtifacts[0].ArtifactType != "windows_exe" || store.mirroredArtifacts[0].UploadStatus != "local" {
+		t.Fatalf("unexpected windows exe mirror: %#v", store.mirroredArtifacts[0])
+	}
+	if store.mirroredArtifacts[1].ArtifactType != "windows_archive" || store.mirroredArtifacts[1].SHA256 != "bbb222" {
+		t.Fatalf("unexpected windows archive mirror: %#v", store.mirroredArtifacts[1])
+	}
+}
+
 func TestCompleteWorkerTaskMirrorsBuildCenterArtifacts(t *testing.T) {
 	store := &workerArtifactMirrorStore{}
 	service := &Service{store: store}

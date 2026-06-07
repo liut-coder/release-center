@@ -41,6 +41,7 @@ import {
   type SystemUser,
 } from "@/api/systemManagement";
 import { AppReleasesPage } from "@/pages/AppReleasesPage";
+import type { ReleasePlanDraftSeed } from "@/pages/ReleasePlansPanel";
 import { ArtifactCenterPage } from "@/pages/ArtifactCenterPage";
 import { BuildCenterPage } from "@/pages/BuildCenterPage";
 import { DeploymentCenterPage } from "@/pages/DeploymentCenterPage";
@@ -129,6 +130,8 @@ type SystemPageRenderContext = {
   error: unknown;
   actions: SystemManagementActions;
   role: string;
+  releasePlanDraftSeed?: ReleasePlanDraftSeed;
+  setReleasePlanDraftSeed: (seed: ReleasePlanDraftSeed) => void;
 };
 
 export function App() {
@@ -141,6 +144,7 @@ export function App() {
     role: storedIdentity.role || "system_admin",
   }));
   const [activePage, setActivePage] = useState<AdminPageKey>("dashboard");
+  const [releasePlanDraftSeed, setReleasePlanDraftSeed] = useState<ReleasePlanDraftSeed>();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const systemQuery = useQuery({
     queryKey: SYSTEM_MANAGEMENT_QUERY_KEY,
@@ -239,6 +243,8 @@ export function App() {
               error: systemQuery.error,
               actions: systemActions,
               role: session.role,
+              releasePlanDraftSeed,
+              setReleasePlanDraftSeed,
             })}
           </div>
         </section>
@@ -411,9 +417,18 @@ function NavButton({ active, disabled, icon: Icon, label, onClick, title }: { ac
 }
 
 function renderPage(activePage: AdminPageKey, setActivePage: (page: AdminPageKey) => void, context: SystemPageRenderContext) {
-  if (activePage === "release-center") return <AppReleasesPage />;
+  if (activePage === "release-center") return <AppReleasesPage draftSeed={context.releasePlanDraftSeed} />;
   if (activePage === "build-center") return <BuildCenterPage />;
-  if (activePage === "artifact-center") return <ArtifactCenterPage />;
+  if (activePage === "artifact-center") {
+    return (
+      <ArtifactCenterPage
+        onCreateReleasePlan={(seed) => {
+          context.setReleasePlanDraftSeed(seed);
+          setActivePage("release-center");
+        }}
+      />
+    );
+  }
   if (activePage === "worker-center") return <WorkerCenterPage />;
   if (activePage === "deployment-center") return <DeploymentCenterPage />;
   if (activePage === "integration-config") return <IntegrationConfigPage />;

@@ -375,7 +375,12 @@ func TestNormalizeArtifactTypeSupportsBuildCenterArtifacts(t *testing.T) {
 		"zip",
 		"web_dist",
 		"binary",
+		"server_binary",
 		"docker_image",
+		"windows_exe",
+		"windows_msi",
+		"windows_installer",
+		"windows_archive",
 		"artifact",
 	} {
 		t.Run(artifactType, func(t *testing.T) {

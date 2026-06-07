@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -12,6 +13,7 @@ import (
 	"net/url"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"regexp"
 	"runtime"
 	"sort"
@@ -47,6 +49,12 @@ type workerCommandSpec struct {
 	Env           map[string]string
 	EnvSources    map[string]string
 	CredentialRef string
+}
+
+type workerArtifactRule struct {
+	Name         string
+	ArtifactType string
+	Path         string
 }
 
 func runWorkerRun(args []string) error {
@@ -197,7 +205,179 @@ func executeWorkerTask(ctx context.Context, cfg workerRunConfig, task apprelease
 		}
 		return workerFailTask(ctx, cfg, task, runErr.Error(), metadata)
 	}
-	return workerCompleteTask(ctx, cfg, task, metadata)
+	artifacts, err := workerArtifactsFromTask(cfg, task)
+	if err != nil {
+		return workerFailTask(ctx, cfg, task, err.Error(), metadata)
+	}
+	if len(artifacts) > 0 {
+		metadata["worker_artifact_count"] = len(artifacts)
+	}
+	return workerCompleteTask(ctx, cfg, task, metadata, artifacts)
+}
+
+func workerArtifactsFromTask(cfg workerRunConfig, task appreleases.WorkerTaskAdmin) ([]appreleases.WorkerTaskArtifact, error) {
+	rules, err := workerArtifactRules(task.Metadata)
+	if err != nil || len(rules) == 0 {
+		return nil, err
+	}
+	baseDir := cfg.Workdir
+	if strings.TrimSpace(baseDir) == "" {
+		baseDir = "."
+	}
+	artifacts := []appreleases.WorkerTaskArtifact{}
+	seen := map[string]struct{}{}
+	for _, rule := range rules {
+		paths, err := workerArtifactPaths(baseDir, rule.Path)
+		if err != nil {
+			return nil, err
+		}
+		if len(paths) == 0 {
+			return nil, fmt.Errorf("artifact rule %q matched no files: %s", rule.Name, rule.Path)
+		}
+		for _, path := range paths {
+			info, err := os.Stat(path)
+			if err != nil {
+				return nil, err
+			}
+			if info.IsDir() {
+				continue
+			}
+			sha, err := sha256File(path)
+			if err != nil {
+				return nil, err
+			}
+			key := rule.Name + "\x00" + rule.ArtifactType + "\x00" + path
+			if _, ok := seen[key]; ok {
+				continue
+			}
+			seen[key] = struct{}{}
+			artifacts = append(artifacts, appreleases.WorkerTaskArtifact{
+				Name:         workerArtifactName(rule, path, len(paths)),
+				ArtifactType: rule.ArtifactType,
+				FileName:     filepath.Base(path),
+				LocalPath:    path,
+				SizeBytes:    info.Size(),
+				SHA256:       sha,
+				Metadata: map[string]any{
+					"artifact_rule_name": rule.Name,
+					"artifact_rule_path": rule.Path,
+				},
+			})
+		}
+	}
+	return artifacts, nil
+}
+
+func workerArtifactRules(raw json.RawMessage) ([]workerArtifactRule, error) {
+	var metadata map[string]any
+	if len(raw) > 0 {
+		if err := json.Unmarshal(raw, &metadata); err != nil {
+			return nil, err
+		}
+	}
+	items, ok := metadata["artifact_rules"].([]any)
+	if !ok || len(items) == 0 {
+		return nil, nil
+	}
+	rules := make([]workerArtifactRule, 0, len(items))
+	for _, item := range items {
+		values, ok := item.(map[string]any)
+		if !ok {
+			continue
+		}
+		rule := workerArtifactRule{
+			Name:         metadataString(values, "name"),
+			ArtifactType: firstNonBlank(metadataString(values, "artifact_type"), metadataString(values, "type"), "artifact"),
+			Path:         metadataString(values, "path"),
+		}
+		if rule.Path == "" {
+			return nil, fmt.Errorf("artifact rule %q is missing path", rule.Name)
+		}
+		if rule.Name == "" {
+			rule.Name = firstNonBlank(rule.ArtifactType, filepath.Base(rule.Path), "artifact")
+		}
+		rules = append(rules, rule)
+	}
+	return rules, nil
+}
+
+func workerArtifactPaths(baseDir, rulePath string) ([]string, error) {
+	path := filepath.FromSlash(strings.TrimSpace(rulePath))
+	if path == "" {
+		return nil, nil
+	}
+	if !filepath.IsAbs(path) {
+		path = filepath.Join(baseDir, path)
+	}
+	if strings.ContainsAny(path, "*?[") {
+		matches, err := filepath.Glob(path)
+		if err != nil {
+			return nil, err
+		}
+		return workerExistingFilePaths(matches), nil
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return []string{}, nil
+		}
+		return nil, err
+	}
+	if !info.IsDir() {
+		return []string{path}, nil
+	}
+	paths := []string{}
+	if err := filepath.WalkDir(path, func(item string, entry os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if entry.IsDir() {
+			return nil
+		}
+		paths = append(paths, item)
+		return nil
+	}); err != nil {
+		return nil, err
+	}
+	sort.Strings(paths)
+	return paths, nil
+}
+
+func workerExistingFilePaths(paths []string) []string {
+	out := make([]string, 0, len(paths))
+	for _, path := range paths {
+		info, err := os.Stat(path)
+		if err == nil && !info.IsDir() {
+			out = append(out, path)
+		}
+	}
+	sort.Strings(out)
+	return out
+}
+
+func workerArtifactName(rule workerArtifactRule, path string, matchedCount int) string {
+	if matchedCount <= 1 {
+		return rule.Name
+	}
+	ext := filepath.Ext(path)
+	stem := strings.TrimSuffix(filepath.Base(path), ext)
+	if stem == "" {
+		return rule.Name
+	}
+	return rule.Name + ":" + stem
+}
+
+func sha256File(path string) (string, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return "", err
+	}
+	defer file.Close()
+	h := sha256.New()
+	if _, err := io.Copy(h, file); err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("%x", h.Sum(nil)), nil
 }
 
 func runWorkerCommand(ctx context.Context, cfg workerRunConfig, spec workerCommandSpec) ([]byte, int, error) {
@@ -234,19 +414,45 @@ func workerTaskCommand(task appreleases.WorkerTaskAdmin) (workerCommandSpec, err
 	if metadata == nil {
 		metadata = map[string]any{}
 	}
+	envFromMetadata := workerTaskEnvFromMetadata(metadata)
 	for _, key := range []string{"prepared_command", "command"} {
 		if spec, ok := commandSpecFromValue(key, metadata[key]); ok {
+			workerSpecMergeEnv(&spec, envFromMetadata, "task_metadata.env")
 			return enrichWorkerCommandSpec(task, metadata, spec)
 		}
 	}
 	if commands, ok := metadata["commands"].(map[string]any); ok {
 		for _, key := range []string{task.Action, task.TaskType, "default"} {
 			if spec, ok := commandSpecFromValue("commands."+key, commands[key]); ok {
+				workerSpecMergeEnv(&spec, envFromMetadata, "task_metadata.env")
 				return enrichWorkerCommandSpec(task, metadata, spec)
 			}
 		}
 	}
 	return workerCommandSpec{}, fmt.Errorf("worker task does not include metadata.command or metadata.prepared_command")
+}
+
+func workerTaskEnvFromMetadata(metadata map[string]any) map[string]string {
+	env := map[string]string{}
+	values, ok := metadata["env"].(map[string]any)
+	if !ok {
+		return env
+	}
+	for key, value := range values {
+		key = strings.TrimSpace(key)
+		if key == "" {
+			continue
+		}
+		switch typed := value.(type) {
+		case string:
+			if strings.TrimSpace(typed) != "" {
+				env[key] = typed
+			}
+		case float64, bool:
+			env[key] = fmt.Sprint(typed)
+		}
+	}
+	return env
 }
 
 func commandSpecFromValue(source string, value any) (workerCommandSpec, bool) {
@@ -306,6 +512,12 @@ func enrichWorkerCommandSpec(task appreleases.WorkerTaskAdmin, metadata map[stri
 func workerTaskIsCloudflare(task appreleases.WorkerTaskAdmin, metadata map[string]any) bool {
 	return strings.HasPrefix(strings.ToLower(strings.TrimSpace(task.Action)), "cloudflare_") ||
 		strings.HasPrefix(strings.ToLower(metadataString(metadata, "provider")), "cloudflare_")
+}
+
+func workerSpecMergeEnv(spec *workerCommandSpec, env map[string]string, source string) {
+	for key, value := range env {
+		workerSpecSetEnv(spec, key, value, source)
+	}
 }
 
 func workerSpecSetEnv(spec *workerCommandSpec, key, value, source string) {
@@ -462,12 +674,13 @@ func workerAppendLogs(ctx context.Context, cfg workerRunConfig, task appreleases
 	}, &resp)
 }
 
-func workerCompleteTask(ctx context.Context, cfg workerRunConfig, task appreleases.WorkerTaskAdmin, metadata map[string]any) error {
+func workerCompleteTask(ctx context.Context, cfg workerRunConfig, task appreleases.WorkerTaskAdmin, metadata map[string]any, artifacts []appreleases.WorkerTaskArtifact) error {
 	var resp appreleases.WorkerActionResponse
 	path := "/api/v1/workers/tasks/" + url.PathEscape(task.ID) + "/complete"
 	if err := workerDoJSON(ctx, cfg, http.MethodPost, path, appreleases.WorkerTaskCompleteRequest{
 		WorkerKey:  cfg.WorkerKey,
 		LeaseToken: task.LeaseToken,
+		Artifacts:  artifacts,
 		Metadata:   metadata,
 	}, &resp); err != nil {
 		return err
@@ -613,6 +826,15 @@ func defaultWorkerKey() string {
 		return runtime.GOOS + "-" + runtime.GOARCH
 	}
 	return host
+}
+
+func firstNonBlank(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return strings.TrimSpace(value)
+		}
+	}
+	return ""
 }
 
 func firstNonBlankEnv(keys ...string) string {

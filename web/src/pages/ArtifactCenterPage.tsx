@@ -1,7 +1,8 @@
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Copy, Download, FileArchive, Link2, Package, RefreshCw, Search, ShieldCheck } from "lucide-react";
+import { Copy, Download, FileArchive, Link2, Package, RefreshCw, Rocket, Search, ShieldCheck } from "lucide-react";
 import { getArtifactCenterItem, getArtifactCenterOverview, type ArtifactCenterItem } from "@/api/artifacts";
+import type { ReleasePlanDraftSeed } from "@/pages/ReleasePlansPanel";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { ApiErrorState } from "@/components/stable/StableAdminComponents";
 import { Badge } from "@/components/ui/Badge";
@@ -14,7 +15,7 @@ import { formatDateTime } from "@/lib/format";
 
 const allOption = "全部";
 
-export function ArtifactCenterPage() {
+export function ArtifactCenterPage({ onCreateReleasePlan }: { onCreateReleasePlan?: (seed: ReleasePlanDraftSeed) => void } = {}) {
   const [query, setQuery] = useState("");
   const [source, setSource] = useState(allOption);
   const [artifactType, setArtifactType] = useState(allOption);
@@ -89,6 +90,7 @@ export function ArtifactCenterPage() {
         <ArtifactDetail
           artifact={selectedArtifact}
           copiedRef={copiedRef}
+          onCreateReleasePlan={onCreateReleasePlan}
           onCopy={(value) => {
             void navigator.clipboard?.writeText(value);
             setCopiedRef(value);
@@ -166,7 +168,17 @@ function ArtifactTable({
   );
 }
 
-function ArtifactDetail({ artifact, copiedRef, onCopy }: { artifact?: ArtifactCenterItem; copiedRef: string; onCopy: (value: string) => void }) {
+function ArtifactDetail({
+  artifact,
+  copiedRef,
+  onCopy,
+  onCreateReleasePlan,
+}: {
+  artifact?: ArtifactCenterItem;
+  copiedRef: string;
+  onCopy: (value: string) => void;
+  onCreateReleasePlan?: (seed: ReleasePlanDraftSeed) => void;
+}) {
   if (!artifact) {
     return (
       <Card>
@@ -187,11 +199,18 @@ function ArtifactDetail({ artifact, copiedRef, onCopy }: { artifact?: ArtifactCe
             <StatusBadge status={artifact.upload_status || artifact.status || "-"} />
           </div>
         </div>
-        {isOpenableLocation(artifact.location) ? (
-          <Button variant="secondary" size="icon" onClick={() => window.open(artifact.location, "_blank", "noopener,noreferrer")} title="打开制品">
-            <Download className="h-4 w-4" />
-          </Button>
-        ) : null}
+        <div className="flex shrink-0 gap-2">
+          {onCreateReleasePlan ? (
+            <Button variant="secondary" size="icon" onClick={() => onCreateReleasePlan(releasePlanSeedFromArtifact(artifact))} title="创建发布计划">
+              <Rocket className="h-4 w-4" />
+            </Button>
+          ) : null}
+          {isOpenableLocation(artifact.location) ? (
+            <Button variant="secondary" size="icon" onClick={() => window.open(artifact.location, "_blank", "noopener,noreferrer")} title="打开制品">
+              <Download className="h-4 w-4" />
+            </Button>
+          ) : null}
+        </div>
       </div>
 
       <div className="grid gap-2 text-xs">
@@ -224,6 +243,57 @@ function ArtifactDetail({ artifact, copiedRef, onCopy }: { artifact?: ArtifactCe
       </div>
     </Card>
   );
+}
+
+
+function releasePlanSeedFromArtifact(artifact: ArtifactCenterItem): ReleasePlanDraftSeed {
+  const unitType = releaseUnitTypeFromArtifact(artifact);
+  const projectKey = artifact.project_key || artifact.app_key || "release-center";
+  const artifactRef = artifact.immutable_ref || `${artifact.source}:${artifact.id}`;
+  const artifactName = artifact.name || artifact.file_name || artifact.artifact_type || "artifact";
+  return {
+    seedKey: `${artifact.source}:${artifact.id}:${Date.now()}`,
+    projectKey,
+    unitKey: defaultUnitKeyFromArtifact(artifact, unitType),
+    environmentKey: artifact.channel === "stable" ? "prod" : "dev",
+    channel: artifact.channel || "dev",
+    title: `${artifactName} 发布`,
+    versionName: artifact.version_name || defaultVersionNameFromDate(),
+    buildNumber: artifact.build_number ?? 1,
+    gitCommit: artifact.git_commit || "",
+    artifactName,
+    artifactType: artifact.artifact_type || "artifact",
+    artifactFileName: artifact.file_name || "",
+    artifactRef,
+    artifactBuildRunId: artifact.run_id || "",
+    artifactAppBuildId: artifact.build_id || "",
+    artifactAppBuildArtifactId: artifact.app_build_artifact_id || "",
+    unitTypeFilter: unitType,
+    message: `已从制品中心带入 ${artifactName}。`,
+  };
+}
+
+function releaseUnitTypeFromArtifact(artifact: ArtifactCenterItem) {
+  const artifactType = (artifact.artifact_type || "").toLowerCase();
+  if (artifactType.startsWith("windows_")) return "windows";
+  if (artifactType === "web_dist") return "web";
+  if (artifactType === "docker_image") return "docker";
+  if (["server_binary", "binary"].includes(artifactType)) return "server";
+  if (["apk", "aab"].includes(artifactType)) return "android";
+  return "config";
+}
+
+function defaultUnitKeyFromArtifact(artifact: ArtifactCenterItem, unitType: string) {
+  if (unitType === "windows") return "windows-app";
+  if (unitType === "web") return "admin-web";
+  if (unitType === "docker") return "container";
+  if (unitType === "server") return "server";
+  if (unitType === "android") return artifact.app_key || "android-app";
+  return artifact.project_key || artifact.app_key || "config";
+}
+
+function defaultVersionNameFromDate() {
+  return new Date().toISOString().slice(0, 10).replace(/-/g, ".");
 }
 
 function Metric({ label, value, note, icon: Icon }: { label: string; value: string | number; note: string; icon: typeof Package }) {

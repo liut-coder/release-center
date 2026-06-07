@@ -116,9 +116,9 @@ type BuildVersionSuggestion = {
   channelMismatchError: string;
 };
 
-export function AppReleasesPage() {
+export function AppReleasesPage({ draftSeed }: { draftSeed?: ReleasePlanDraftSeed } = {}) {
   const [activeTab, setActiveTab] = useState<ReleaseTab>("plans");
-  const [releasePlanDraftSeed, setReleasePlanDraftSeed] = useState<ReleasePlanDraftSeed>();
+  const [releasePlanDraftSeed, setReleasePlanDraftSeed] = useState<ReleasePlanDraftSeed | undefined>(draftSeed);
   const [channelFilter, setChannelFilter] = useState("全部");
   const [query, setQuery] = useState("");
   const [gitRef, setGitRef] = useState("main");
@@ -164,6 +164,12 @@ export function AppReleasesPage() {
   const [pendingResourceAction, setPendingResourceAction] = useState<PendingResourceAction>(null);
   const [rolloutTarget, setRolloutTarget] = useState<RolloutTarget>(null);
   const [notesTarget, setNotesTarget] = useState<NotesTarget>(null);
+
+  useEffect(() => {
+    if (!draftSeed?.seedKey) return;
+    setReleasePlanDraftSeed(draftSeed);
+    setActiveTab("plans");
+  }, [draftSeed?.seedKey]);
 
   const releasesQuery = useQuery({
     queryKey: ["app-releases"],

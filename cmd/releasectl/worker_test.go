@@ -2,6 +2,8 @@ package main
 
 import (
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -56,6 +58,68 @@ func TestWorkerTaskCommandReadsActionCommands(t *testing.T) {
 	}
 	if got := spec.Args; len(got) != 3 || got[0] != "go" || got[2] != "./..." {
 		t.Fatalf("args = %#v", got)
+	}
+}
+
+func TestWorkerTaskCommandInjectsMetadataEnv(t *testing.T) {
+	metadata := mustRawJSON(t, map[string]any{
+		"commands": map[string]any{
+			"all": "buildctl all desktop-tool",
+		},
+		"env": map[string]any{
+			"VERSION_NAME": "2.0.0",
+			"VERSION_CODE": 20,
+			"CHANNEL":      "stable",
+		},
+	})
+	spec, err := workerTaskCommand(appreleases.WorkerTaskAdmin{TaskType: "build", Action: "all", Metadata: metadata})
+	if err != nil {
+		t.Fatalf("workerTaskCommand returned error: %v", err)
+	}
+	if spec.Source != "commands.all" || spec.Shell != "buildctl all desktop-tool" {
+		t.Fatalf("spec = %#v", spec)
+	}
+	if spec.Env["VERSION_NAME"] != "2.0.0" || spec.Env["VERSION_CODE"] != "20" || spec.Env["CHANNEL"] != "stable" {
+		t.Fatalf("metadata env was not injected: %#v", spec.Env)
+	}
+	if spec.EnvSources["VERSION_NAME"] != "task_metadata.env" {
+		t.Fatalf("unexpected env source: %#v", spec.EnvSources)
+	}
+}
+
+func TestWorkerArtifactsFromTaskCollectsArtifactRules(t *testing.T) {
+	workdir := t.TempDir()
+	artifactDir := filepath.Join(workdir, "dist", "windows")
+	if err := os.MkdirAll(artifactDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	exePath := filepath.Join(artifactDir, "desktop.exe")
+	zipPath := filepath.Join(artifactDir, "desktop.zip")
+	if err := os.WriteFile(exePath, []byte("exe"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(zipPath, []byte("zip"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	metadata := mustRawJSON(t, map[string]any{
+		"artifact_rules": []any{
+			map[string]any{"name": "windows-exe", "type": "windows_exe", "path": "dist/windows/*.exe"},
+			map[string]any{"name": "windows-archive", "type": "windows_archive", "path": "dist/windows/*.zip"},
+		},
+	})
+
+	artifacts, err := workerArtifactsFromTask(workerRunConfig{Workdir: workdir}, appreleases.WorkerTaskAdmin{Metadata: metadata})
+	if err != nil {
+		t.Fatalf("workerArtifactsFromTask returned error: %v", err)
+	}
+	if len(artifacts) != 2 {
+		t.Fatalf("expected 2 artifacts, got %#v", artifacts)
+	}
+	if artifacts[0].Name != "windows-exe" || artifacts[0].ArtifactType != "windows_exe" || artifacts[0].FileName != "desktop.exe" || artifacts[0].SizeBytes != 3 {
+		t.Fatalf("unexpected exe artifact: %#v", artifacts[0])
+	}
+	if artifacts[1].Name != "windows-archive" || artifacts[1].ArtifactType != "windows_archive" || artifacts[1].FileName != "desktop.zip" || artifacts[1].SHA256 == "" {
+		t.Fatalf("unexpected zip artifact: %#v", artifacts[1])
 	}
 }
 
